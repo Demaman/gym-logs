@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/* Class-based dark mode for next-themes */
+@custom-variant dark (&:is(.dark *));
+
+/* ─── Design tokens ──────────────────────────────────────── */
+:root {
+  --background:          #ffffff;
+  --background-subtle:   #f4f4f5;
+  --card:                #ffffff;
+  --popover:             #ffffff;
+
+  --foreground:          #09090b;
+  --muted-foreground:    #71717a;
+  --muted:               #a1a1aa;
+
+  --primary:             #7c3aed;
+  --primary-foreground:  #ffffff;
+
+  --destructive:         #dc2626;
+  --destructive-foreground: #ffffff;
+
+  --secondary:           #f4f4f5;
+  --secondary-foreground: #09090b;
+
+  --accent:              #ede9fe;
+  --accent-foreground:   #4c1d95;
+
+  --border:              #e4e4e7;
+  --input:               #e4e4e7;
+  --ring:                #7c3aed;
+
+  --success:             #059669;
+  --warning:             #f59e0b;
+
+  --radius:              0.75rem;
+}
+
+.dark {
+  --background:          #09090b;
+  --background-subtle:   #18181b;
+  --card:                #18181b;
+  --popover:             #18181b;
+
+  --foreground:          #fafafa;
+  --muted-foreground:    #a1a1aa;
+  --muted:               #71717a;
+
+  --primary:             #a78bfa;
+  --primary-foreground:  #09090b;
+
+  --destructive:         #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --secondary:           #27272a;
+  --secondary-foreground: #fafafa;
+
+  --accent:              #2e1065;
+  --accent-foreground:   #a78bfa;
+
+  --border:              #27272a;
+  --input:               #27272a;
+  --ring:                #a78bfa;
+
+  --success:             #10b981;
+  --warning:             #f59e0b;
+}
+
+/* ─── Map tokens → Tailwind utilities ────────────────────── */
+@theme inline {
+  --color-background:          var(--background);
+  --color-background-subtle:   var(--background-subtle);
+  --color-card:                var(--card);
+  --color-popover:             var(--popover);
+
+  --color-foreground:          var(--foreground);
+  --color-muted-foreground:    var(--muted-foreground);
+  --color-muted:               var(--muted);
+
+  --color-primary:             var(--primary);
+  --color-primary-foreground:  var(--primary-foreground);
+
+  --color-destructive:         var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-secondary:           var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-accent:              var(--accent);
+  --color-accent-foreground:   var(--accent-foreground);
+
+  --color-border:              var(--border);
+  --color-input:               var(--input);
+  --color-ring:                var(--ring);
+
+  --color-success:             var(--success);
+  --color-warning:             var(--warning);
+
+  --font-sans:                 var(--font-inter);
+
+  --radius-sm:  calc(var(--radius) - 0.25rem);
+  --radius-md:  calc(var(--radius) - 0.125rem);
+  --radius-lg:  var(--radius);
+  --radius-xl:  calc(var(--radius) + 0.25rem);
+}
+
+/* ─── Base ───────────────────────────────────────────────── */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
