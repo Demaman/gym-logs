@@ -1,0 +1,39 @@
+from modules.training.schemas.exercise import (
+    ExerciseCreate,
+    ExerciseResponse,
+    ExerciseUpdate,
+)
+from modules.training.schemas.prescribed_set import (
+    PrescribedSetCreate,
+    PrescribedSetResponse,
+)
+from modules.training.schemas.program import (
+    ProgramCreate,
+    ProgramResponse,
+    ProgramUpdate,
+)
+from modules.training.schemas.program_day import (
+    ProgramDayCreate,
+    ProgramDayResponse,
+    ProgramDayUpdate,
+)
+from modules.training.schemas.program_exercise import (
+    ProgramExerciseCreate,
+    ProgramExerciseResponse,
+)
+
+__all__ = [
+    "ExerciseCreate",
+    "ExerciseUpdate",
+    "ExerciseResponse",
+    "PrescribedSetCreate",
+    "PrescribedSetResponse",
+    "ProgramExerciseCreate",
+    "ProgramExerciseResponse",
+    "ProgramDayCreate",
+    "ProgramDayUpdate",
+    "ProgramDayResponse",
+    "ProgramCreate",
+    "ProgramUpdate",
+    "ProgramResponse",
+]

@@ -1,0 +1,21 @@
+import uuid
+
+from pydantic import BaseModel
+
+from modules.training.schemas.prescribed_set import PrescribedSetResponse
+
+
+class ProgramExerciseCreate(BaseModel):
+    exercise_id: uuid.UUID
+    position: int
+    notes: str | None = None
+
+
+class ProgramExerciseResponse(BaseModel):
+    id: uuid.UUID
+    program_day_id: uuid.UUID
+    exercise_id: uuid.UUID
+    position: int
+    notes: str | None
+    prescribed_sets: list[PrescribedSetResponse] = []
+    model_config = {"from_attributes": True}
