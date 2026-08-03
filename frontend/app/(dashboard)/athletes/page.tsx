@@ -36,6 +36,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { useRole } from '@/hooks/use-role'
+import { useI18n } from '@/providers/i18n-provider'
 import {
   useMyMemberships,
   useOrgMemberships,
@@ -57,18 +58,19 @@ function emailInitials(email: string) {
     .padEnd(1, local[0]?.toUpperCase() ?? '?')
 }
 
-function formatExpiry(isoDate: string) {
-  return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+function formatExpiry(isoDate: string, locale: string) {
+  return new Date(isoDate).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
 }
 
 // ── Invite dialog ─────────────────────────────────────────────────────────────
 
 const inviteSchema = z.object({
-  email: z.string().email('Enter a valid email address'),
+  email: z.string().email(),
 })
 type InviteForm = z.infer<typeof inviteSchema>
 
 function InviteDialog({ onSuccess }: { onSuccess: () => void }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
@@ -94,15 +96,15 @@ function InviteDialog({ onSuccess }: { onSuccess: () => void }) {
     try {
       const result = await invite.mutateAsync({ email: values.email, role: 'athlete' })
       const msg = result.accepted_at
-        ? `${values.email} was linked immediately.`
-        : `Invite sent to ${values.email}. They'll be linked when they register.`
+        ? `${values.email} ${t.athletes.linkedImmediately}`
+        : `${t.athletes.inviteSentTo} ${values.email}. ${t.athletes.inviteSentSuffix}`
       setSuccessMsg(msg)
       form.reset()
       onSuccess()
       setTimeout(() => setOpen(false), 1800)
     } catch (err) {
       const ax = err as AxiosError<ApiError>
-      setServerError(ax.response?.data?.detail ?? 'Something went wrong. Please try again.')
+      setServerError(ax.response?.data?.detail ?? t.athletes.errorGeneric)
     }
   }
 
@@ -111,12 +113,12 @@ function InviteDialog({ onSuccess }: { onSuccess: () => void }) {
       <DialogTrigger asChild>
         <Button size="sm">
           <UserPlus className="mr-2 size-4" aria-hidden />
-          Invite client
+          {t.athletes.inviteBtn}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Invite a client</DialogTitle>
+          <DialogTitle>{t.athletes.inviteDialogTitle}</DialogTitle>
         </DialogHeader>
 
         {successMsg && (
@@ -137,12 +139,12 @@ function InviteDialog({ onSuccess }: { onSuccess: () => void }) {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email address *</FormLabel>
+                  <FormLabel>{t.athletes.emailLabel} *</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       type="email"
-                      placeholder="e.g. client@example.com"
+                      placeholder={t.athletes.emailPlaceholder}
                       autoFocus
                     />
                   </FormControl>
@@ -158,7 +160,7 @@ function InviteDialog({ onSuccess }: { onSuccess: () => void }) {
               {invite.isPending && (
                 <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
               )}
-              {invite.isPending ? 'Sending…' : 'Send invite'}
+              {invite.isPending ? t.athletes.sending : t.athletes.sendInvite}
             </Button>
           </form>
         </Form>
@@ -176,6 +178,7 @@ function MembershipCard({
   membership: MembershipEnriched
   showTrainer: boolean
 }) {
+  const { t } = useI18n()
   const remove = useDeleteMembership()
 
   return (
@@ -189,7 +192,7 @@ function MembershipCard({
         </p>
         {showTrainer && (
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Trainer:{' '}
+            {t.athletes.trainerLabel}:{' '}
             <span className="text-foreground/80">{membership.trainer_email}</span>
           </p>
         )}
@@ -201,31 +204,32 @@ function MembershipCard({
             size="sm"
             className="shrink-0 text-muted-foreground hover:text-destructive"
             disabled={remove.isPending}
-            aria-label={`Remove ${membership.athlete_email}`}
+            aria-label={`${t.athletes.removeBtn} ${membership.athlete_email}`}
           >
             {remove.isPending ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : (
               <Trash2 className="size-4" aria-hidden />
             )}
-            <span className="ml-1.5 hidden sm:inline">Remove</span>
+            <span className="ml-1.5 hidden sm:inline">{t.athletes.removeBtn}</span>
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove client?</AlertDialogTitle>
+            <AlertDialogTitle>{t.athletes.removeTitle}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will unlink <strong>{membership.athlete_email}</strong> from your organization.
-              Their workout history and programs are kept — only the membership link is removed.
+              {t.athletes.removeDescPre}{' '}
+              <strong>{membership.athlete_email}</strong>{' '}
+              {t.athletes.removeDescPost}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => remove.mutate(membership.id)}
             >
-              Remove
+              {t.athletes.removeConfirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -237,6 +241,7 @@ function MembershipCard({
 // ── Pending invite row ────────────────────────────────────────────────────────
 
 function InviteRow({ invite }: { invite: Invite }) {
+  const { t, locale } = useI18n()
   const cancel = useDeleteInvite()
 
   return (
@@ -246,7 +251,7 @@ function InviteRow({ invite }: { invite: Invite }) {
         <p className="truncate text-sm text-foreground">{invite.email}</p>
         <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
           <Clock className="size-3" aria-hidden />
-          Expires {formatExpiry(invite.expires_at)}
+          {t.athletes.expires} {formatExpiry(invite.expires_at, locale)}
         </p>
       </div>
       <AlertDialog>
@@ -256,30 +261,31 @@ function InviteRow({ invite }: { invite: Invite }) {
             size="sm"
             className="shrink-0 text-muted-foreground hover:text-destructive"
             disabled={cancel.isPending}
-            aria-label={`Cancel invite to ${invite.email}`}
+            aria-label={`${t.athletes.cancelInviteBtn} ${invite.email}`}
           >
             {cancel.isPending ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : (
-              'Cancel'
+              t.athletes.cancelInviteBtn
             )}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel invite?</AlertDialogTitle>
+            <AlertDialogTitle>{t.athletes.cancelInviteTitle}</AlertDialogTitle>
             <AlertDialogDescription>
-              The invite to <strong>{invite.email}</strong> will be cancelled. They won&apos;t
-              be auto-linked if they register after this.
+              {t.athletes.cancelInviteDescPre}{' '}
+              <strong>{invite.email}</strong>{' '}
+              {t.athletes.cancelInviteDescPost}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep invite</AlertDialogCancel>
+            <AlertDialogCancel>{t.athletes.keepInvite}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => cancel.mutate(invite.id)}
             >
-              Cancel invite
+              {t.athletes.cancelInviteConfirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -316,6 +322,8 @@ function AthletesList({
   isAdmin: boolean
   isLoading: boolean
 }) {
+  const { t } = useI18n()
+
   if (isLoading) {
     return (
       <main className="flex-1 space-y-3 p-6">
@@ -330,11 +338,9 @@ function AthletesList({
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <Users className="size-10 text-muted" aria-hidden />
-        <p className="font-semibold text-foreground">No clients yet</p>
+        <p className="font-semibold text-foreground">{t.athletes.noClients}</p>
         <p className="text-sm text-muted-foreground">
-          {isAdmin
-            ? 'Invite clients or ask trainers to link theirs.'
-            : 'Invite your first client to start tracking their progress.'}
+          {isAdmin ? t.athletes.noClientsDescAdmin : t.athletes.noClientsDescTrainer}
         </p>
       </main>
     )
@@ -345,7 +351,7 @@ function AthletesList({
       {linked.length > 0 && (
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {isAdmin ? 'All clients' : 'Linked clients'} · {linked.length}
+            {isAdmin ? t.athletes.allClients : t.athletes.linkedClients} · {linked.length}
           </h2>
           <div className="space-y-2">
             {linked.map((m) => (
@@ -357,7 +363,7 @@ function AthletesList({
       {pending.length > 0 && (
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Pending invites · {pending.length}
+            {t.athletes.pendingInvites} · {pending.length}
           </h2>
           <div className="space-y-2">
             {pending.map((inv) => (
@@ -400,14 +406,13 @@ function AdminContent() {
 
 export default function AthletesPage() {
   const role = useRole()
+  const { t } = useI18n()
 
   if (role !== 'trainer' && role !== 'gym_admin') {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="font-semibold text-foreground">Access restricted</p>
-        <p className="text-sm text-muted-foreground">
-          This page is for trainers and gym admins.
-        </p>
+        <p className="font-semibold text-foreground">{t.athletes.accessRestricted}</p>
+        <p className="text-sm text-muted-foreground">{t.athletes.accessRestrictedDesc}</p>
       </div>
     )
   }
@@ -417,7 +422,7 @@ export default function AthletesPage() {
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
         <div className="flex items-center gap-3">
           <Users className="size-5 text-primary" aria-hidden />
-          <h1 className="text-base font-semibold text-foreground">Clients</h1>
+          <h1 className="text-base font-semibold text-foreground">{t.athletes.title}</h1>
         </div>
         <InviteDialog onSuccess={() => {}} />
       </header>
