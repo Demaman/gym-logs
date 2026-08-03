@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2 } from 'lucide-react'
+import { Copy, Loader2 } from 'lucide-react'
+
 import { useI18n } from '@/providers/i18n-provider'
 import { useAuthStore } from '@/lib/auth/store'
 import { useRole } from '@/hooks/use-role'
@@ -14,7 +15,7 @@ import {
   useChangePassword,
   useUpdateMyOrganization,
 } from '@/hooks/identity/use-settings'
-import { useMyTrainer } from '@/hooks/identity/use-memberships'
+import { useMyTrainer, useLeaveOrganization } from '@/hooks/identity/use-memberships'
 import { useMyInvites, useAcceptInvite, useDeclineInvite } from '@/hooks/identity/use-invites'
 import {
   Form,
@@ -26,6 +27,17 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -381,6 +393,20 @@ function OrgForm() {
           />
         </div>
 
+        {/* Join code display */}
+        {org.join_code && (
+          <div className="space-y-2 pt-2">
+            <div className="h-px bg-border" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t.settings.joinCode}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t.settings.joinCodeDesc}</p>
+            </div>
+            <JoinCodeDisplay code={org.join_code} t={t} />
+          </div>
+        )}
+
         <div className="flex items-center justify-end gap-3">
           {saved && <span className="text-sm text-green-600">{t.settings.orgSaved}</span>}
           <Button type="submit" disabled={isPending || !form.formState.isDirty}>
@@ -389,6 +415,33 @@ function OrgForm() {
         </div>
       </form>
     </Form>
+  )
+}
+
+// ── Join code display widget ──────────────────────────────────────────────────
+
+function JoinCodeDisplay({ code, t }: { code: string; t: ReturnType<typeof useI18n>['t'] }) {
+  const [copied, setCopied] = useState(false)
+
+  function copy() {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 rounded-lg border border-border bg-muted/40 px-4 py-2.5">
+        <span className="font-mono text-xl font-bold tracking-[0.3em] text-foreground">
+          {code}
+        </span>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={copy} className="shrink-0">
+        <Copy className="mr-1.5 size-3.5" aria-hidden />
+        {copied ? t.settings.codeCopied : t.settings.copyCode}
+      </Button>
+    </div>
   )
 }
 
@@ -461,6 +514,7 @@ function AthleteOrgCard() {
   const { t } = useI18n()
   const { data: org, isLoading: orgLoading } = useMyOrganization()
   const { data: trainerMembership, isLoading: trainerLoading } = useMyTrainer()
+  const leave = useLeaveOrganization()
 
   if (orgLoading || trainerLoading) {
     return <p className="text-sm text-muted-foreground">{t.common.loading}</p>
@@ -469,22 +523,56 @@ function AthleteOrgCard() {
   if (!org) return null
 
   return (
-    <dl className="space-y-3">
-      <div>
-        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t.settings.orgName}
-        </dt>
-        <dd className="mt-1 text-sm font-medium text-foreground">{org.name}</dd>
-      </div>
-      <div>
-        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t.invites.trainer}
-        </dt>
-        <dd className="mt-1 text-sm font-medium text-foreground">
-          {trainerMembership ? trainerMembership.trainer_email : t.invites.noTrainer}
-        </dd>
-      </div>
-    </dl>
+    <div className="space-y-4">
+      <dl className="space-y-3">
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t.settings.orgName}
+          </dt>
+          <dd className="mt-1 text-sm font-medium text-foreground">{org.name}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t.invites.trainer}
+          </dt>
+          <dd className="mt-1 text-sm font-medium text-foreground">
+            {trainerMembership ? trainerMembership.trainer_email : t.invites.noTrainer}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="h-px bg-border" />
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={leave.isPending}>
+            {leave.isPending ? (
+              <>
+                <Loader2 className="mr-2 size-3 animate-spin" aria-hidden />
+                {t.settings.leaving}
+              </>
+            ) : (
+              t.settings.leaveOrg
+            )}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.settings.leaveOrgTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{t.settings.leaveOrgDesc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => leave.mutate()}
+            >
+              {t.settings.leaveOrgConfirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
 
@@ -520,7 +608,7 @@ export default function SettingsPage() {
       {role === 'athlete' && <PendingInvitesSection />}
 
       {isLinkedAthlete && (
-        <Section title={t.settings.organization} description={t.invites.bannerBody}>
+        <Section title={t.settings.organization} description={t.settings.orgLinkedDesc}>
           <AthleteOrgCard />
         </Section>
       )}

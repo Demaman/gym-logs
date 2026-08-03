@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, Loader2, Dumbbell, Users, Building2, CheckCircle2, Check } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Dumbbell, Users, Building2, CheckCircle2, Check, Building } from 'lucide-react'
 import Link from 'next/link'
 import { type AxiosError } from 'axios'
 import { cn } from '@/lib/utils'
@@ -22,8 +22,9 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { register as registerApi } from '@/lib/api/auth'
-import { createOrganization } from '@/lib/api/identity'
-import type { ApiError, User } from '@/types/api'
+import { createOrganization, getOrgByJoinCode } from '@/lib/api/identity'
+import type { ApiError, OrgLookup, User } from '@/types/api'
+import { useI18n } from '@/providers/i18n-provider'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ const ROLES: RoleOption[] = [
   },
 ]
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const JOIN_CODE_RE = /^[A-Z0-9]{6}$/i
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ const schema = z
     email:            z.string().email('Enter a valid email address'),
     password:         z.string().min(8, 'Must be at least 8 characters'),
     confirm_password: z.string().min(1, 'Please confirm your password'),
-    organization_id:  z.string().optional(),
+    join_code:        z.string().optional(),
     org_name:         z.string().optional(),
     cnpj:             z.string().optional(),
     phone:            z.string().optional(),
@@ -161,6 +162,65 @@ function PasswordInput({ value, onChange, onBlur, name, autoComplete, placeholde
         {show ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
       </button>
     </div>
+  )
+}
+
+// ── Join code field with live gym preview ─────────────────────────────────────
+
+function JoinCodeField({
+  form,
+  gymLookup,
+  gymLookupError,
+  isLookingUp,
+  onCodeChange,
+  t,
+}: {
+  form: ReturnType<typeof useForm<FormInput>>
+  gymLookup: OrgLookup | null
+  gymLookupError: string | null
+  isLookingUp: boolean
+  onCodeChange: (v: string) => void
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  return (
+    <FormField
+      control={form.control}
+      name="join_code"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t.auth.joinCodeLabel} <span className="text-destructive" aria-hidden>*</span></FormLabel>
+          <FormControl>
+            <Input
+              {...field}
+              autoFocus
+              placeholder={t.auth.joinCodePlaceholder}
+              spellCheck={false}
+              maxLength={6}
+              className="font-mono tracking-widest uppercase"
+              value={field.value?.toUpperCase() ?? ''}
+              onChange={(e) => onCodeChange(e.target.value)}
+            />
+          </FormControl>
+          <FormDescription>{t.auth.joinCodeHint}</FormDescription>
+          {isLookingUp && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+              {t.auth.lookingUpGym}
+            </p>
+          )}
+          {gymLookup && !isLookingUp && (
+            <p className="flex items-center gap-1.5 text-xs text-green-600">
+              <Building className="size-3" aria-hidden />
+              {t.auth.gymFound} <span className="font-semibold">{gymLookup.name}</span>
+            </p>
+          )}
+          {gymLookupError && !isLookingUp && (
+            <p className="text-xs text-destructive">{gymLookupError}</p>
+          )}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   )
 }
 
@@ -298,6 +358,7 @@ function OrgFields({ form, required }: { form: ReturnType<typeof useForm<FormInp
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function RegisterForm() {
+  const { t } = useI18n()
   const [step, setStep] = useState<Step>(1)
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
   const [orgMode, setOrgMode] = useState<OrgMode>('none')
@@ -307,10 +368,16 @@ export function RegisterForm() {
   const [isSuccess, setIsSuccess] = useState(false)
   const [registeredUser, setRegisteredUser] = useState<User | null>(null)
 
+  // Join code lookup state
+  const [gymLookup, setGymLookup] = useState<OrgLookup | null>(null)
+  const [gymLookupError, setGymLookupError] = useState<string | null>(null)
+  const [isLookingUp, setIsLookingUp] = useState(false)
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const form = useForm<FormInput>({
     resolver: zodResolver(schema),
     defaultValues: {
-      email: '', password: '', confirm_password: '', organization_id: '',
+      email: '', password: '', confirm_password: '', join_code: '',
       org_name: '', cnpj: '', phone: '', contact_email: '',
       address_street: '', address_city: '', address_state: '', address_zip: '', website: '',
     },
@@ -320,6 +387,28 @@ export function RegisterForm() {
 
   const shouldCreateOrg = selectedRole === 'gym_admin' || (selectedRole === 'trainer' && orgMode === 'create')
 
+  function handleJoinCodeChange(value: string) {
+    const code = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+    form.setValue('join_code', code)
+    setGymLookup(null)
+    setGymLookupError(null)
+    if (lookupTimer.current) clearTimeout(lookupTimer.current)
+    if (JOIN_CODE_RE.test(code)) {
+      setIsLookingUp(true)
+      lookupTimer.current = setTimeout(async () => {
+        try {
+          const org = await getOrgByJoinCode(code)
+          setGymLookup(org)
+          setGymLookupError(null)
+        } catch {
+          setGymLookupError(t.auth.gymNotFound)
+        } finally {
+          setIsLookingUp(false)
+        }
+      }, 400)
+    }
+  }
+
   async function onSubmit(values: FormInput) {
     if (!selectedRole) return
 
@@ -328,11 +417,18 @@ export function RegisterForm() {
       return
     }
 
+    // Block if join code entered but not yet resolved
+    if (orgMode === 'join' && values.join_code && !gymLookup) {
+      form.setError('join_code', { message: gymLookupError ?? t.auth.gymNotFound })
+      return
+    }
+
     setIsSubmitting(true)
     setSubmitError(null)
 
     try {
       let orgId: string | undefined
+      let joinCode: string | undefined
 
       if (shouldCreateOrg) {
         const org = await createOrganization({
@@ -347,8 +443,8 @@ export function RegisterForm() {
           website: values.website || null,
         })
         orgId = String(org.id)
-      } else if (orgMode === 'join' && values.organization_id) {
-        orgId = values.organization_id
+      } else if (orgMode === 'join' && values.join_code) {
+        joinCode = values.join_code
       }
 
       const user = await registerApi({
@@ -356,6 +452,7 @@ export function RegisterForm() {
         password: values.password,
         role: selectedRole,
         organization_id: orgId,
+        join_code: joinCode,
       })
       setRegisteredUser(user)
       setIsSuccess(true)
@@ -497,14 +594,14 @@ export function RegisterForm() {
               {([
                 { mode: 'none' as OrgMode,   label: 'I work independently' },
                 { mode: 'create' as OrgMode, label: 'Create my organization' },
-                { mode: 'join' as OrgMode,   label: 'Join an existing gym' },
+                { mode: 'join' as OrgMode,   label: t.auth.joinExistingGym },
               ]).map(({ mode, label }) => (
                 <label key={mode} className="flex cursor-pointer items-center gap-3 select-none">
                   <input
                     type="radio"
                     name="orgMode"
                     checked={orgMode === mode}
-                    onChange={() => setOrgMode(mode)}
+                    onChange={() => { setOrgMode(mode); setGymLookup(null); setGymLookupError(null) }}
                     className="h-4 w-4 accent-primary"
                   />
                   <span className="text-sm font-medium">{label}</span>
@@ -520,23 +617,14 @@ export function RegisterForm() {
             )}
 
             {orgMode === 'join' && (
-              <FormField control={form.control} name="organization_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization ID</FormLabel>
-                  <FormControl>
-                    <Input {...field} autoFocus placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" spellCheck={false}
-                      onChange={(e) => {
-                        field.onChange(e)
-                        const v = e.target.value
-                        if (v && !UUID_RE.test(v)) form.setError('organization_id', { message: "That doesn't look like a valid ID" })
-                        else form.clearErrors('organization_id')
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>Get this from your gym administrator</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <JoinCodeField
+                form={form}
+                gymLookup={gymLookup}
+                gymLookupError={gymLookupError}
+                isLookingUp={isLookingUp}
+                onCodeChange={handleJoinCodeChange}
+                t={t}
+              />
             )}
           </div>
         )}
@@ -550,31 +638,22 @@ export function RegisterForm() {
                 checked={orgMode === 'join'}
                 onChange={(e) => {
                   setOrgMode(e.target.checked ? 'join' : 'none')
-                  if (!e.target.checked) form.setValue('organization_id', '')
+                  if (!e.target.checked) { form.setValue('join_code', ''); setGymLookup(null); setGymLookupError(null) }
                 }}
                 className="h-4 w-4 rounded border-border accent-primary"
               />
-              <span className="text-sm font-medium text-foreground">I belong to a gym</span>
+              <span className="text-sm font-medium text-foreground">{t.auth.belongToGym}</span>
             </label>
 
             {orgMode === 'join' && (
-              <FormField control={form.control} name="organization_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization ID</FormLabel>
-                  <FormControl>
-                    <Input {...field} autoFocus placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" spellCheck={false}
-                      onChange={(e) => {
-                        field.onChange(e)
-                        const v = e.target.value
-                        if (v && !UUID_RE.test(v)) form.setError('organization_id', { message: "Check with your gym admin — that doesn't look like a valid ID" })
-                        else form.clearErrors('organization_id')
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>Get this code from your gym administrator</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <JoinCodeField
+                form={form}
+                gymLookup={gymLookup}
+                gymLookupError={gymLookupError}
+                isLookingUp={isLookingUp}
+                onCodeChange={handleJoinCodeChange}
+                t={t}
+              />
             )}
           </div>
         )}

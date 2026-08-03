@@ -2,6 +2,7 @@ import type {
   Invite,
   InviteRequest,
   MembershipEnriched,
+  OrgLookup,
   Organization,
   OrganizationCreateRequest,
   OrganizationUpdateRequest,
@@ -10,6 +11,20 @@ import type {
   UserUpdateRequest,
 } from '@/types/api'
 import { api } from './client'
+
+export async function getOrgByJoinCode(code: string): Promise<OrgLookup> {
+  const { data } = await api.get<OrgLookup>(`/api/v1/identity/organizations/by-code/${code.toUpperCase()}`)
+  return data
+}
+
+export async function leaveOrganization(): Promise<void> {
+  await api.post('/api/v1/identity/members/leave')
+}
+
+export async function getMe(): Promise<User> {
+  const { data } = await api.get<User>('/api/v1/identity/users/me')
+  return data
+}
 
 export async function createOrganization(
   payload: OrganizationCreateRequest,

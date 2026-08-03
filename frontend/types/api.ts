@@ -9,6 +9,7 @@ export interface User {
 export interface Organization {
   id: string
   name: string
+  join_code: string | null
   cnpj: string | null
   phone: string | null
   contact_email: string | null
@@ -18,6 +19,11 @@ export interface Organization {
   address_zip: string | null
   website: string | null
   created_at: string
+}
+
+export interface OrgLookup {
+  id: string
+  name: string
 }
 
 export interface OrganizationCreateRequest {
@@ -64,6 +70,7 @@ export interface RegisterRequest {
   password: string
   role: 'athlete' | 'trainer' | 'gym_admin'
   organization_id?: string
+  join_code?: string
 }
 
 export interface MembershipEnriched {
