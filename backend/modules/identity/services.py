@@ -324,10 +324,20 @@ class IdentityService:
         is_admin = role == Role.GYM_ADMIN and membership.organization_id == org_id
         if not is_trainer_owner and not is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to delete this membership")
-        athlete = await self._user_repo.get_by_id(membership.athlete_id)
-        if athlete and athlete.organization_id == membership.organization_id:
-            await self._user_repo.update(athlete, organization_id=None)
-        await self._membership_repo.delete(membership)
+        if is_admin and not is_trainer_owner:
+            # Gym admin removes athlete from the org entirely:
+            # delete all trainer↔athlete memberships and clear org link.
+            athlete = await self._user_repo.get_by_id(membership.athlete_id)
+            all_memberships = await self._membership_repo.list_by_athlete(
+                membership.athlete_id, membership.organization_id
+            )
+            for m in all_memberships:
+                await self._membership_repo.delete(m)
+            if athlete and athlete.organization_id == membership.organization_id:
+                await self._user_repo.update(athlete, organization_id=None)
+        else:
+            # Trainer removes their own link — athlete stays in the org.
+            await self._membership_repo.delete(membership)
 
     async def leave_organization(self, user: CurrentUser) -> None:
         if user.get("role") != Role.ATHLETE:

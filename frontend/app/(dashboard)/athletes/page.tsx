@@ -392,9 +392,24 @@ function TrainerContent() {
 function AdminContent() {
   const memberships = useOrgMemberships()
   const invites = useInvites()
+
+  // Each athlete may have multiple membership rows (e.g. one legacy gym-admin
+  // link + a real trainer link). Show each athlete once, keeping the most
+  // recently created membership so the real trainer is displayed.
+  const deduped = (() => {
+    const latest = new Map<string, MembershipEnriched>()
+    for (const m of memberships.data ?? []) {
+      const existing = latest.get(m.athlete_id)
+      if (!existing || m.created_at > existing.created_at) {
+        latest.set(m.athlete_id, m)
+      }
+    }
+    return [...latest.values()]
+  })()
+
   return (
     <AthletesList
-      linked={memberships.data ?? []}
+      linked={deduped}
       pending={(invites.data ?? []).filter((i) => i.accepted_at === null)}
       isAdmin={true}
       isLoading={memberships.isLoading}
