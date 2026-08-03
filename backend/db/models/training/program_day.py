@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.database import Base
-from db.constants.training import DayTag, SCHEMA
+from db.constants.training import SCHEMA, DayTag
 
 
 class ProgramDay(Base):

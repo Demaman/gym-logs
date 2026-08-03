@@ -14,6 +14,12 @@ DayTagLiteral = Literal[
     "full_body",
     "cardio",
     "custom",
+    "chest",
+    "back",
+    "shoulders",
+    "arms",
+    "glutes",
+    "core",
 ]
 
 

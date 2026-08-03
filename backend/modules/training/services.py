@@ -121,14 +121,9 @@ class ProgramService:
         self._ex_repo = ProgramExerciseRepository(session)
         self._set_repo = PrescribedSetRepository(session)
 
-    def _org_id(self, current_user: dict) -> uuid.UUID:
+    def _org_id(self, current_user: dict) -> uuid.UUID | None:
         org_id = current_user.get("organization_id")
-        if not org_id:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "Programs require an organization context",
-            )
-        return uuid.UUID(org_id)
+        return uuid.UUID(org_id) if org_id else None
 
     def _user_id(self, current_user: dict) -> uuid.UUID:
         return uuid.UUID(current_user["user_id"])
@@ -157,7 +152,7 @@ class ProgramService:
             {
                 "program_id": str(program.id),
                 "athlete_id": str(program.athlete_id),
-                "organization_id": str(program.organization_id),
+                "organization_id": str(program.organization_id) if program.organization_id else None,
             },
         )
         return ProgramResponse.model_validate(program)
@@ -166,7 +161,8 @@ class ProgramService:
         self, current_user: dict, program_id: uuid.UUID
     ) -> ProgramResponse:
         org_id = self._org_id(current_user)
-        p = await self._program_repo.get_by_id(program_id, organization_id=org_id)
+        user_id = self._user_id(current_user)
+        p = await self._program_repo.get_by_id(program_id, organization_id=org_id, user_id=user_id)
         if not p:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
         return ProgramResponse.model_validate(p)
@@ -175,7 +171,11 @@ class ProgramService:
         org_id = self._org_id(current_user)
         user_id = self._user_id(current_user)
         if current_user["role"] == "gym_admin":
+            if org_id is None:
+                return []
             programs = await self._program_repo.list_for_org(org_id)
+        elif current_user["role"] == "trainer":
+            programs = await self._program_repo.list_for_trainer(user_id, org_id)
         else:
             programs = await self._program_repo.list_for_athlete(user_id, org_id)
         return [ProgramResponse.model_validate(p) for p in programs]
@@ -184,7 +184,8 @@ class ProgramService:
         self, current_user: dict, program_id: uuid.UUID, data: ProgramUpdate
     ) -> ProgramResponse:
         org_id = self._org_id(current_user)
-        p = await self._program_repo.get_by_id(program_id, organization_id=org_id)
+        user_id = self._user_id(current_user)
+        p = await self._program_repo.get_by_id(program_id, organization_id=org_id, user_id=user_id)
         if not p:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
         if (
@@ -197,7 +198,8 @@ class ProgramService:
 
     async def delete(self, current_user: dict, program_id: uuid.UUID) -> None:
         org_id = self._org_id(current_user)
-        p = await self._program_repo.get_by_id(program_id, organization_id=org_id)
+        user_id = self._user_id(current_user)
+        p = await self._program_repo.get_by_id(program_id, organization_id=org_id, user_id=user_id)
         if not p:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
         if (
@@ -211,7 +213,8 @@ class ProgramService:
         self, current_user: dict, program_id: uuid.UUID, data: ProgramDayCreate
     ) -> ProgramDayResponse:
         org_id = self._org_id(current_user)
-        p = await self._program_repo.get_by_id(program_id, organization_id=org_id)
+        user_id = self._user_id(current_user)
+        p = await self._program_repo.get_by_id(program_id, organization_id=org_id, user_id=user_id)
         if not p:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
         day = await self._day_repo.create(
@@ -279,3 +282,27 @@ class ProgramService:
             notes=data.notes,
         )
         return PrescribedSetResponse.model_validate(ps)
+
+    async def replace_prescribed_sets(
+        self, ex_id: uuid.UUID, data: list[PrescribedSetCreate]
+    ) -> list[PrescribedSetResponse]:
+        ex = await self._ex_repo.get_by_id(ex_id)
+        if not ex:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Program exercise not found")
+        new_sets = [d.model_dump(exclude={"position"}) for d in data]
+        replaced = await self._set_repo.bulk_replace(ex_id, new_sets)
+        return [PrescribedSetResponse.model_validate(ps) for ps in replaced]
+
+    async def delete_prescribed_set(
+        self, ex_id: uuid.UUID, set_id: uuid.UUID
+    ) -> None:
+        ps = await self._set_repo.get_by_id(set_id)
+        if not ps:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "Prescribed set not found"
+            )
+        if ps.program_exercise_id != ex_id:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "Prescribed set not found"
+            )
+        await self._set_repo.delete(ps)

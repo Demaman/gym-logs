@@ -16,10 +16,10 @@ class Program(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    organization_id: Mapped[uuid.UUID] = mapped_column(
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("identity.organizations.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     athlete_id: Mapped[uuid.UUID | None] = mapped_column(

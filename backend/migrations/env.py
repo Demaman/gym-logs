@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Register all models so Alembic can detect them
 import db.models.identity  # noqa: F401
-import db.models.training  # noqa: F401
 import db.models.logs  # noqa: F401
+import db.models.training  # noqa: F401
 from core.config import settings
 from core.database import Base
 

@@ -2,8 +2,14 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db.models.training.program_exercise import ProgramExercise
+
+
+def _with_sets() -> list:
+    """Eagerly load prescribed_sets for a ProgramExercise."""
+    return [selectinload(ProgramExercise.prescribed_sets)]
 
 
 class ProgramExerciseRepository:
@@ -12,7 +18,9 @@ class ProgramExerciseRepository:
 
     async def get_by_id(self, ex_id: uuid.UUID) -> ProgramExercise | None:
         result = await self._s.execute(
-            select(ProgramExercise).where(ProgramExercise.id == ex_id)
+            select(ProgramExercise)
+            .options(*_with_sets())
+            .where(ProgramExercise.id == ex_id)
         )
         return result.scalar_one_or_none()
 
@@ -21,6 +29,7 @@ class ProgramExerciseRepository:
     ) -> list[ProgramExercise]:
         result = await self._s.execute(
             select(ProgramExercise)
+            .options(*_with_sets())
             .where(ProgramExercise.program_day_id == program_day_id)
             .order_by(ProgramExercise.position.asc())
         )
@@ -43,14 +52,19 @@ class ProgramExerciseRepository:
         self._s.add(ex)
         await self._s.commit()
         await self._s.refresh(ex)
-        return ex
+        result = await self._s.execute(
+            select(ProgramExercise).options(*_with_sets()).where(ProgramExercise.id == ex.id)
+        )
+        return result.scalar_one()
 
     async def update(self, ex: ProgramExercise, **fields) -> ProgramExercise:
         for key, value in fields.items():
             setattr(ex, key, value)
         await self._s.commit()
-        await self._s.refresh(ex)
-        return ex
+        result = await self._s.execute(
+            select(ProgramExercise).options(*_with_sets()).where(ProgramExercise.id == ex.id)
+        )
+        return result.scalar_one()
 
     async def delete(self, ex: ProgramExercise) -> None:
         await self._s.delete(ex)

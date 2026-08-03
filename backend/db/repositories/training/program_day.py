@@ -2,8 +2,17 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db.models.training.program_day import ProgramDay
+from db.models.training.program_exercise import ProgramExercise
+
+
+def _with_exercises() -> list:
+    """Eagerly load exercises → prescribed_sets for a ProgramDay."""
+    return [
+        selectinload(ProgramDay.exercises).selectinload(ProgramExercise.prescribed_sets)
+    ]
 
 
 class ProgramDayRepository:
@@ -12,13 +21,16 @@ class ProgramDayRepository:
 
     async def get_by_id(self, day_id: uuid.UUID) -> ProgramDay | None:
         result = await self._s.execute(
-            select(ProgramDay).where(ProgramDay.id == day_id)
+            select(ProgramDay)
+            .options(*_with_exercises())
+            .where(ProgramDay.id == day_id)
         )
         return result.scalar_one_or_none()
 
     async def list_for_program(self, program_id: uuid.UUID) -> list[ProgramDay]:
         result = await self._s.execute(
             select(ProgramDay)
+            .options(*_with_exercises())
             .where(ProgramDay.program_id == program_id)
             .order_by(ProgramDay.position.asc())
         )
@@ -41,14 +53,19 @@ class ProgramDayRepository:
         self._s.add(day)
         await self._s.commit()
         await self._s.refresh(day)
-        return day
+        result = await self._s.execute(
+            select(ProgramDay).options(*_with_exercises()).where(ProgramDay.id == day.id)
+        )
+        return result.scalar_one()
 
     async def update(self, day: ProgramDay, **fields) -> ProgramDay:
         for key, value in fields.items():
             setattr(day, key, value)
         await self._s.commit()
-        await self._s.refresh(day)
-        return day
+        result = await self._s.execute(
+            select(ProgramDay).options(*_with_exercises()).where(ProgramDay.id == day.id)
+        )
+        return result.scalar_one()
 
     async def reorder(
         self, days: list[ProgramDay], new_positions: list[int]

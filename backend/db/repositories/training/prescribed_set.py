@@ -10,6 +10,12 @@ class PrescribedSetRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._s = session
 
+    async def get_by_id(self, set_id: uuid.UUID) -> PrescribedSet | None:
+        result = await self._s.execute(
+            select(PrescribedSet).where(PrescribedSet.id == set_id)
+        )
+        return result.scalar_one_or_none()
+
     async def list_for_program_exercise(
         self, program_exercise_id: uuid.UUID
     ) -> list[PrescribedSet]:

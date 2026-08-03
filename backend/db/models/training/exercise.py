@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database import Base
-from db.constants.training import Equipment, MuscleGroup, MovementPattern, SCHEMA
+from db.constants.training import SCHEMA, Equipment, MovementPattern, MuscleGroup
 
 
 class Exercise(Base):

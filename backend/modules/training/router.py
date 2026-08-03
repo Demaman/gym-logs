@@ -232,3 +232,27 @@ async def add_prescribed_set(
     svc: ProgramService = Depends(_program_svc),
 ) -> PrescribedSetResponse:
     return await svc.add_prescribed_set(ex_id, data)
+
+
+@router.put(
+    "/program-exercises/{ex_id}/sets",
+    response_model=list[PrescribedSetResponse],
+)
+async def replace_prescribed_sets(
+    ex_id: uuid.UUID,
+    data: list[PrescribedSetCreate],
+    current_user: CurrentUser,
+    svc: ProgramService = Depends(_program_svc),
+) -> list[PrescribedSetResponse]:
+    return await svc.replace_prescribed_sets(ex_id, data)
+
+
+@router.delete("/program-exercises/{ex_id}/sets/{set_id}", status_code=204)
+async def delete_prescribed_set(
+    ex_id: uuid.UUID,
+    set_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: ProgramService = Depends(_program_svc),
+) -> Response:
+    await svc.delete_prescribed_set(ex_id, set_id)
+    return Response(status_code=204)

@@ -128,6 +128,12 @@ class DayTag:
     FULL_BODY = "full_body"
     CARDIO = "cardio"
     CUSTOM = "custom"
+    CHEST = "chest"
+    BACK = "back"
+    SHOULDERS = "shoulders"
+    ARMS = "arms"
+    GLUTES = "glutes"
+    CORE = "core"
 
     ALL: tuple[str, ...] = (
         PUSH,
@@ -138,6 +144,12 @@ class DayTag:
         FULL_BODY,
         CARDIO,
         CUSTOM,
+        CHEST,
+        BACK,
+        SHOULDERS,
+        ARMS,
+        GLUTES,
+        CORE,
     )
 
 

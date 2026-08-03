@@ -24,7 +24,7 @@ class ProgramUpdate(BaseModel):
 
 class ProgramResponse(BaseModel):
     id: uuid.UUID
-    organization_id: uuid.UUID
+    organization_id: uuid.UUID | None
     athlete_id: uuid.UUID | None
     name: str
     description: str | None
