@@ -1,4 +1,18 @@
 services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://10.211.55.10:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - app
+    restart: unless-stopped
+
   app:
     build: ./backend
     ports:
