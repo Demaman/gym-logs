@@ -30,7 +30,8 @@ import { useStartSession } from '@/hooks/logs/use-start-session'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
 import { deleteSession } from '@/lib/api/logs'
 import { useExerciseSearch } from '@/hooks/training/use-exercises'
-import type { Program, ProgramDay, ProgramExercise, PrescribedSet, DayTag, Exercise } from '@/types/api'
+import { useMyMemberships } from '@/hooks/identity/use-memberships'
+import type { MembershipEnriched, Program, ProgramDay, ProgramExercise, PrescribedSet, DayTag, Exercise } from '@/types/api'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -935,24 +936,26 @@ function ProgramRow({ program, selected, onSelect }: ProgramRowProps) {
 interface NewProgramSheetProps {
   open: boolean
   onClose: () => void
-  onCreate: (name: string, description: string) => void
+  onCreate: (name: string, description: string, athleteId?: string) => void
   isCreating: boolean
   error?: string | null
+  athletes?: MembershipEnriched[]
 }
 
-function NewProgramSheet({ open, onClose, onCreate, isCreating, error }: NewProgramSheetProps) {
+function NewProgramSheet({ open, onClose, onCreate, isCreating, error, athletes }: NewProgramSheetProps) {
   const { t } = useI18n()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [selectedAthleteId, setSelectedAthleteId] = useState('')
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    onCreate(name.trim(), description.trim())
+    onCreate(name.trim(), description.trim(), selectedAthleteId || undefined)
   }
 
   useEffect(() => {
-    if (!open) { setName(''); setDescription('') }
+    if (!open) { setName(''); setDescription(''); setSelectedAthleteId('') }
   }, [open])
 
   if (!open) return null
@@ -1011,6 +1014,26 @@ function NewProgramSheet({ open, onClose, onCreate, isCreating, error }: NewProg
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
+            {athletes && athletes.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="prog-athlete" className="text-sm font-medium text-foreground">
+                  {t.training.assignToAthlete}
+                </label>
+                <select
+                  id="prog-athlete"
+                  value={selectedAthleteId}
+                  onChange={(e) => setSelectedAthleteId(e.target.value)}
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">{t.training.forMyself}</option>
+                  {athletes.map((m) => (
+                    <option key={m.athlete_id} value={m.athlete_id}>
+                      {m.athlete_email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <Button
               type="submit"
               disabled={!name.trim() || isCreating}
@@ -1180,6 +1203,8 @@ export default function TrainingPage() {
     { limit: 100 },
     { enabled: true },
   )
+  const { data: myMemberships = [] } = useMyMemberships()
+  const myAthletes = role === 'trainer' ? myMemberships : []
 
   const exerciseMap = new Map(allExercises.map((e) => [e.id, e]))
 
@@ -1219,10 +1244,15 @@ export default function TrainingPage() {
 
   const nextDayPosition = selectedProgram ? selectedProgram.days.length + 1 : 1
 
-  async function handleCreateProgram(name: string, description: string) {
+  async function handleCreateProgram(name: string, description: string, athleteId?: string) {
     setCreateProgramError(null)
     try {
-      const prog = await createProgram.mutateAsync({ name, description, mode: 'program_driven' })
+      const prog = await createProgram.mutateAsync({
+        name,
+        description,
+        mode: 'program_driven',
+        athlete_id: athleteId,
+      })
       setSelectedProgramId(prog.id)
       setShowNewProgram(false)
       setMobileView('detail')
@@ -1386,6 +1416,7 @@ export default function TrainingPage() {
         onCreate={handleCreateProgram}
         isCreating={createProgram.isPending}
         error={createProgramError}
+        athletes={myAthletes}
       />
       <AddDaySheet
         open={showAddDay}

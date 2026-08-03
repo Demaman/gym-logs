@@ -97,6 +97,8 @@ export const en = {
     discardAndStart: 'Discard & start new',
     discarding: 'Discarding…',
     dismiss: 'Dismiss',
+    assignToAthlete: 'Assign to athlete',
+    forMyself: 'For myself',
   },
   health: {
     title: 'Health Profile', subtitle: 'Your physical profile and body measurements',

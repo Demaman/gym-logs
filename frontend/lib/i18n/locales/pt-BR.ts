@@ -97,6 +97,8 @@ export const ptBR = {
     discardAndStart: 'Descartar e iniciar novo',
     discarding: 'Descartando…',
     dismiss: 'Dispensar',
+    assignToAthlete: 'Atribuir a atleta',
+    forMyself: 'Para mim mesmo',
   },
   health: {
     title: 'Perfil de Saúde', subtitle: 'Seu perfil físico e medidas corporais',

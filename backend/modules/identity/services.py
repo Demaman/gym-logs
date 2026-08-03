@@ -357,7 +357,45 @@ class IdentityService:
         existing_user = await self._user_repo.get_by_email(email)
         if existing_user:
             if existing_user.organization_id == org_id:
-                raise HTTPException(status.HTTP_409_CONFLICT, "User is already in your organization")
+                # Athlete is already in this org (e.g. linked by a gym admin).
+                # If the caller is a trainer, create the membership directly —
+                # no invite flow required; just link them.
+                if user.get("role") == Role.TRAINER:
+                    if existing_user.role != Role.ATHLETE:
+                        raise HTTPException(
+                            status.HTTP_400_BAD_REQUEST,
+                            "That user is not an athlete",
+                        )
+                    existing_memberships = await self._membership_repo.list_by_trainer(trainer_id, org_id)
+                    if any(m.athlete_id == existing_user.id for m in existing_memberships):
+                        raise HTTPException(
+                            status.HTTP_409_CONFLICT, "This athlete is already your client"
+                        )
+                    membership = await self._membership_repo.create(
+                        organization_id=org_id,
+                        trainer_id=trainer_id,
+                        athlete_id=existing_user.id,
+                    )
+                    await publish("membership.created", {
+                        "membership_id": str(membership.id),
+                        "organization_id": str(org_id),
+                        "trainer_id": str(trainer_id),
+                        "athlete_id": str(existing_user.id),
+                    })
+                    org = await self._org_repo.get_by_id(org_id)
+                    return InviteResponse(
+                        id=uuid.uuid4(),
+                        organization_id=org_id,
+                        organization_name=org.name if org else None,
+                        email=email,
+                        role=data.role or "athlete",
+                        expires_at=datetime.now(UTC),
+                        accepted_at=datetime.now(UTC),
+                        created_at=datetime.now(UTC),
+                    )
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "User is already in your organization"
+                )
             if existing_user.organization_id is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, "User belongs to another organization")
 
