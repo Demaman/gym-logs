@@ -20,6 +20,11 @@ class ProgramUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     mode: SessionModeLiteral | None = None
+    athlete_id: uuid.UUID | None = None
+
+
+class BulkAssignRequest(BaseModel):
+    athlete_ids: list[uuid.UUID]
 
 
 class ProgramResponse(BaseModel):

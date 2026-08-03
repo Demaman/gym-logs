@@ -1289,3 +1289,51 @@ async def test_trainer_sees_own_programs_and_created_programs(client: AsyncClien
     names = [p["name"] for p in resp.json()]
     assert "My Own Program" in names
     assert "Athlete Program" in names
+
+
+@pytest.mark.asyncio
+async def test_bulk_assign_creates_copies_for_each_athlete(client: AsyncClient) -> None:
+    """POST /programs/{id}/assign creates an independent copy for each selected athlete."""
+    org_id = await _make_org(client, "BulkAssign Gym")
+    athlete1_id = await _register(client, org_id, email="ba_a1@test.com", role="athlete")
+    athlete2_id = await _register(client, org_id, email="ba_a2@test.com", role="athlete")
+    await _register(client, org_id, email="ba_trainer@test.com", role="trainer")
+    trainer_headers = await _auth_headers(client, "ba_trainer@test.com")
+
+    # Create source program with a day and exercise
+    ex = await _create_exercise(client, trainer_headers, name="BulkSqt", muscle_group="quads", movement_pattern="squat")
+    prog = await _create_program(client, trainer_headers, name="Beginner Template")
+    day = await _add_day(client, trainer_headers, prog["id"], name="Leg Day", position=1, day_tag="legs")
+    await _add_exercise_to_day(client, trainer_headers, day["id"], ex["id"])
+
+    resp = await client.post(
+        f"/api/v1/training/programs/{prog['id']}/assign",
+        json={"athlete_ids": [athlete1_id, athlete2_id]},
+        headers=trainer_headers,
+    )
+    assert resp.status_code == 201
+    copies = resp.json()
+    assert len(copies) == 2
+    assert all(c["name"] == "Beginner Template" for c in copies)
+    assert {c["athlete_id"] for c in copies} == {athlete1_id, athlete2_id}
+    # Each copy should have the day deep-copied
+    assert all(len(c["days"]) == 1 for c in copies)
+    assert all(len(c["days"][0]["exercises"]) == 1 for c in copies)
+
+
+@pytest.mark.asyncio
+async def test_bulk_assign_athlete_cannot_assign(client: AsyncClient) -> None:
+    """Athletes cannot call the assign endpoint."""
+    org_id = await _make_org(client, "BulkAssignAuth Gym")
+    athlete_id = await _register(client, org_id, email="ba_auth_a@test.com", role="athlete")
+    await _register(client, org_id, email="ba_auth_t@test.com", role="trainer")
+    trainer_headers = await _auth_headers(client, "ba_auth_t@test.com")
+    athlete_headers = await _auth_headers(client, "ba_auth_a@test.com")
+
+    prog = await _create_program(client, trainer_headers, name="Auth Test Program")
+    resp = await client.post(
+        f"/api/v1/training/programs/{prog['id']}/assign",
+        json={"athlete_ids": [athlete_id]},
+        headers=athlete_headers,
+    )
+    assert resp.status_code == 403

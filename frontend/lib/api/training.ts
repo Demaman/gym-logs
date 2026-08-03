@@ -44,6 +44,17 @@ export async function createProgram(payload: {
   return data
 }
 
+export async function assignProgramToAthletes(
+  programId: string,
+  athleteIds: string[],
+): Promise<Program[]> {
+  const { data } = await api.post<Program[]>(
+    `/api/v1/training/programs/${programId}/assign`,
+    { athlete_ids: athleteIds },
+  )
+  return data
+}
+
 export async function updateProgram(
   id: string,
   payload: UpdateProgramRequest,

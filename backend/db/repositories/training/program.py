@@ -120,6 +120,16 @@ class ProgramRepository:
         )
         return result.scalar_one()
 
+    async def get_by_id_fresh(self, program_id: uuid.UUID) -> Program | None:
+        """Re-fetch a program from the DB, bypassing the session identity-map cache."""
+        result = await self._s.execute(
+            select(Program)
+            .options(*_with_days())
+            .where(Program.id == program_id, Program.is_active.is_(True))
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def update(self, program: Program, **fields) -> Program:
         for key, value in fields.items():
             setattr(program, key, value)

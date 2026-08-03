@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser
 from core.database import get_db
 from modules.training.schemas import (
+    BulkAssignRequest,
     ExerciseCreate,
     ExerciseResponse,
     ExerciseUpdate,
@@ -135,6 +136,16 @@ async def update_program(
     svc: ProgramService = Depends(_program_svc),
 ) -> ProgramResponse:
     return await svc.update(current_user, program_id, data)
+
+
+@router.post("/programs/{program_id}/assign", response_model=list[ProgramResponse], status_code=201)
+async def assign_program_to_athletes(
+    program_id: uuid.UUID,
+    data: BulkAssignRequest,
+    current_user: CurrentUser,
+    svc: ProgramService = Depends(_program_svc),
+) -> list[ProgramResponse]:
+    return await svc.bulk_assign(current_user, program_id, data.athlete_ids)
 
 
 @router.delete("/programs/{program_id}", status_code=204)

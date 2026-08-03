@@ -281,6 +281,7 @@ export interface CreateExerciseRequest {
 export interface UpdateProgramRequest {
   name?: string
   description?: string
+  athlete_id?: string
 }
 
 export interface CreateProgramDayRequest {

@@ -8,6 +8,7 @@ from modules.training.schemas.prescribed_set import (
     PrescribedSetResponse,
 )
 from modules.training.schemas.program import (
+    BulkAssignRequest,
     ProgramCreate,
     ProgramResponse,
     ProgramUpdate,
@@ -33,6 +34,7 @@ __all__ = [
     "ProgramDayCreate",
     "ProgramDayUpdate",
     "ProgramDayResponse",
+    "BulkAssignRequest",
     "ProgramCreate",
     "ProgramUpdate",
     "ProgramResponse",

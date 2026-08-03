@@ -193,6 +193,12 @@ class ProgramService:
             and current_user["role"] != "gym_admin"
         ):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
+        if data.athlete_id and data.athlete_id != user_id:
+            if current_user["role"] not in ("trainer", "gym_admin"):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "Only trainers can assign programs to athletes",
+                )
         p = await self._program_repo.update(p, **data.model_dump(exclude_none=True))
         return ProgramResponse.model_validate(p)
 
@@ -208,6 +214,80 @@ class ProgramService:
         ):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
         await self._program_repo.soft_delete(p)
+
+    async def bulk_assign(
+        self, current_user: dict, program_id: uuid.UUID, athlete_ids: list[uuid.UUID]
+    ) -> list[ProgramResponse]:
+        org_id = self._org_id(current_user)
+        user_id = self._user_id(current_user)
+        if current_user["role"] not in ("trainer", "gym_admin"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only trainers can assign programs to athletes",
+            )
+        source = await self._program_repo.get_by_id(
+            program_id, organization_id=org_id, user_id=user_id
+        )
+        if not source:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
+        if (
+            str(source.created_by_id) != current_user["user_id"]
+            and current_user["role"] != "gym_admin"
+        ):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
+
+        created: list[ProgramResponse] = []
+        for athlete_id in athlete_ids:
+            if athlete_id == user_id:
+                continue
+            copy = await self._program_repo.create(
+                organization_id=org_id,
+                athlete_id=athlete_id,
+                name=source.name,
+                description=source.description,
+                mode=source.mode,
+                created_by_id=user_id,
+            )
+            for day in sorted(source.days, key=lambda d: d.position):
+                new_day = await self._day_repo.create(
+                    program_id=copy.id,
+                    name=day.name,
+                    position=day.position,
+                    day_tag=day.day_tag,
+                )
+                for ex in sorted(day.exercises, key=lambda e: e.position):
+                    new_ex = await self._ex_repo.create(
+                        program_day_id=new_day.id,
+                        exercise_id=ex.exercise_id,
+                        position=ex.position,
+                        notes=ex.notes,
+                    )
+                    for ps in sorted(ex.prescribed_sets, key=lambda s: s.position):
+                        await self._set_repo.create(
+                            program_exercise_id=new_ex.id,
+                            position=ps.position,
+                            set_type=ps.set_type,
+                            rep_min=ps.rep_min,
+                            rep_max=ps.rep_max,
+                            rpe_target=ps.rpe_target,
+                            rest_seconds=ps.rest_seconds,
+                            weight_pct_1rm=ps.weight_pct_1rm,
+                            notes=ps.notes,
+                        )
+            full_copy = await self._program_repo.get_by_id_fresh(copy.id)
+            if full_copy:
+                await publish(
+                    "program.created",
+                    {
+                        "program_id": str(full_copy.id),
+                        "athlete_id": str(full_copy.athlete_id),
+                        "organization_id": str(full_copy.organization_id)
+                        if full_copy.organization_id
+                        else None,
+                    },
+                )
+                created.append(ProgramResponse.model_validate(full_copy))
+        return created
 
     async def add_day(
         self, current_user: dict, program_id: uuid.UUID, data: ProgramDayCreate

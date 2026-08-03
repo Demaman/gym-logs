@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listPrograms, createProgram, getProgram,
-  updateProgram, deleteProgram,
+  assignProgramToAthletes, updateProgram, deleteProgram,
   addDay, updateDay, deleteDay,
   addExerciseToDay, deleteProgramExercise,
   addPrescribedSet, deletePrescribedSet,
@@ -35,6 +35,17 @@ export function useCreateProgram() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: createProgram,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PROGRAMS_KEY })
+    },
+  })
+}
+
+export function useAssignProgram() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ programId, athleteIds }: { programId: string; athleteIds: string[] }) =>
+      assignProgramToAthletes(programId, athleteIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: PROGRAMS_KEY })
     },
