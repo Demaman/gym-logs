@@ -1,5 +1,6 @@
 'use client'
 
+import { use } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Dumbbell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -170,10 +171,11 @@ function PageSkeleton() {
 export default function SessionSummaryPage({
   params,
 }: {
-  params: { sessionId: string }
+  params: Promise<{ sessionId: string }>
 }) {
   const router = useRouter()
-  const { data: session, isLoading, isError } = useSession(params.sessionId)
+  const { sessionId } = use(params)
+  const { data: session, isLoading, isError } = useSession(sessionId)
 
   if (isLoading) return <PageSkeleton />
 

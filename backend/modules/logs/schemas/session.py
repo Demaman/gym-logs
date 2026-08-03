@@ -8,7 +8,20 @@ from modules.logs.schemas.exercise import LoggedExerciseResponse
 
 SessionModeLiteral = Literal["on_the_fly", "program_driven"]
 DayTagLiteral = Literal[
-    "push", "pull", "legs", "upper", "lower", "full_body", "cardio", "custom"
+    "push",
+    "pull",
+    "legs",
+    "upper",
+    "lower",
+    "full_body",
+    "cardio",
+    "custom",
+    "chest",
+    "back",
+    "shoulders",
+    "arms",
+    "glutes",
+    "core",
 ]
 
 
@@ -48,3 +61,9 @@ class WorkoutSessionResponse(BaseModel):
     summary: SessionSummary | None = None  # computed and attached by service
 
     model_config = {"from_attributes": True}
+
+
+class UpdateSessionRequest(BaseModel):
+    name: str | None = None
+    day_tag: DayTagLiteral | None = None
+    program_day_id: uuid.UUID | None = None

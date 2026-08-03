@@ -6,15 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser
 from core.database import get_db
 from modules.logs.schemas import (
+    ExerciseHistorySeries,
     FinishSessionRequest,
     LoggedExerciseCreate,
     LoggedExerciseResponse,
     LoggedSetCreate,
     LoggedSetResponse,
     LoggedSetUpdate,
+    ProgressStats,
+    WeeklyVolumeSeries,
     WorkoutSessionCreate,
     WorkoutSessionResponse,
 )
+from modules.logs.schemas.session import UpdateSessionRequest
 from modules.logs.services import ExerciseLogService, SessionService, SetLogService
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -71,6 +75,25 @@ async def get_active_session(
     return result
 
 
+# NOTE: /sessions/stats and /sessions/volume-over-time must be defined BEFORE
+# /sessions/{session_id} to avoid the literal strings being parsed as UUIDs.
+@router.get("/sessions/stats", response_model=ProgressStats)
+async def get_progress_stats(
+    current_user: CurrentUser,
+    svc: SessionService = Depends(_session_svc),
+) -> ProgressStats:
+    return await svc.get_progress_stats(current_user)
+
+
+@router.get("/sessions/volume-over-time", response_model=WeeklyVolumeSeries)
+async def get_volume_over_time(
+    current_user: CurrentUser,
+    weeks: int = Query(default=12, ge=4, le=52),
+    svc: SessionService = Depends(_session_svc),
+) -> WeeklyVolumeSeries:
+    return await svc.get_weekly_volume(current_user, weeks=weeks)
+
+
 @router.get("/sessions/{session_id}", response_model=WorkoutSessionResponse)
 async def get_session(
     session_id: uuid.UUID,
@@ -90,6 +113,16 @@ async def finish_session(
     svc: SessionService = Depends(_session_svc),
 ) -> WorkoutSessionResponse:
     return await svc.finish_session(current_user, session_id, data)
+
+
+@router.patch("/sessions/{session_id}", response_model=WorkoutSessionResponse)
+async def update_session(
+    session_id: uuid.UUID,
+    body: UpdateSessionRequest,
+    current_user: CurrentUser,
+    svc: SessionService = Depends(_session_svc),
+) -> WorkoutSessionResponse:
+    return await svc.update_session(current_user, session_id, body)
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
@@ -115,6 +148,18 @@ async def get_exercise_last_session(
         response.status_code = 204
         return None
     return result
+
+
+@router.get(
+    "/exercises/catalog/{catalog_exercise_id}/history",
+    response_model=ExerciseHistorySeries,
+)
+async def get_exercise_history(
+    catalog_exercise_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: SessionService = Depends(_session_svc),
+) -> ExerciseHistorySeries:
+    return await svc.get_exercise_history(current_user, catalog_exercise_id)
 
 
 # ---------------------------------------------------------------------------

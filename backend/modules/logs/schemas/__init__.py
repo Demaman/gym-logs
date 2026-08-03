@@ -2,7 +2,15 @@ from modules.logs.schemas.exercise import (
     ExerciseAverage,
     LoggedExerciseCreate,
     LoggedExerciseResponse,
+    PrescribedSetTarget,
     PreviousExerciseSession,
+)
+from modules.logs.schemas.progress import (
+    ExerciseHistoryPoint,
+    ExerciseHistorySeries,
+    ProgressStats,
+    WeeklyVolumePoint,
+    WeeklyVolumeSeries,
 )
 from modules.logs.schemas.session import (
     DayTagLiteral,
@@ -20,12 +28,18 @@ from modules.logs.schemas.set import (
 )
 
 __all__ = [
+    "ProgressStats",
+    "WeeklyVolumePoint",
+    "WeeklyVolumeSeries",
+    "ExerciseHistoryPoint",
+    "ExerciseHistorySeries",
     "SetTypeLiteral",
     "LoggedSetCreate",
     "LoggedSetUpdate",
     "LoggedSetResponse",
     "LoggedExerciseCreate",
     "LoggedExerciseResponse",
+    "PrescribedSetTarget",
     "ExerciseAverage",
     "PreviousExerciseSession",
     "SessionModeLiteral",

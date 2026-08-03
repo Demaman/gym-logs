@@ -19,6 +19,15 @@ class LoggedExerciseCreate(BaseModel):
         return self
 
 
+class PrescribedSetTarget(BaseModel):
+    """A target set from the program day — shown as reference during logging."""
+    set_type: str
+    rep_min: int
+    rep_max: int
+    rpe_target: float | None
+    rest_seconds: int | None
+
+
 class LoggedExerciseResponse(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
@@ -27,6 +36,7 @@ class LoggedExerciseResponse(BaseModel):
     position: int
     notes: str | None
     logged_sets: list[LoggedSetResponse] = []
+    prescribed_sets: list[PrescribedSetTarget] = []
 
     model_config = {"from_attributes": True}
 

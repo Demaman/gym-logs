@@ -1,8 +1,9 @@
 import type {
   WorkoutSession, LoggedExercise, LoggedSet,
-  CreateSessionRequest, FinishSessionRequest,
+  CreateSessionRequest, UpdateSessionRequest, FinishSessionRequest,
   AddExerciseRequest, LogSetRequest, UpdateSetRequest,
   ExerciseLastSession,
+  ProgressStats, WeeklyVolumeSeries, ExerciseHistorySeries,
 } from '@/types/api'
 import { api } from './client'
 
@@ -39,6 +40,14 @@ export async function finishSession(
     `/api/v1/logs/sessions/${id}/finish`,
     payload,
   )
+  return data
+}
+
+export async function updateSession(
+  id: string,
+  payload: UpdateSessionRequest,
+): Promise<WorkoutSession> {
+  const { data } = await api.patch<WorkoutSession>(`/api/v1/logs/sessions/${id}`, payload)
   return data
 }
 
@@ -104,4 +113,26 @@ export async function deleteSet(
   await api.delete(
     `/api/v1/logs/sessions/${sessionId}/exercises/${exerciseId}/sets/${setId}`,
   )
+}
+
+export async function getProgressStats(): Promise<ProgressStats> {
+  const { data } = await api.get<ProgressStats>('/api/v1/logs/sessions/stats')
+  return data
+}
+
+export async function getWeeklyVolume(weeks = 12): Promise<WeeklyVolumeSeries> {
+  const { data } = await api.get<WeeklyVolumeSeries>(
+    '/api/v1/logs/sessions/volume-over-time',
+    { params: { weeks } },
+  )
+  return data
+}
+
+export async function getExerciseHistory(
+  catalogExerciseId: string,
+): Promise<ExerciseHistorySeries> {
+  const { data } = await api.get<ExerciseHistorySeries>(
+    `/api/v1/logs/exercises/catalog/${catalogExerciseId}/history`,
+  )
+  return data
 }

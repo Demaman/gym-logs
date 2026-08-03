@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
@@ -14,17 +14,22 @@ import {
   ChevronRight,
   Timer,
   MoreHorizontal,
+  ClipboardList,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/hooks/logs/use-session'
 import { useFinishSession } from '@/hooks/logs/use-finish-session'
+import { useUpdateSession } from '@/hooks/logs/use-update-session'
+import { useDiscardSession } from '@/hooks/logs/use-discard-session'
 import { useAddExercise, useDeleteExercise } from '@/hooks/logs/use-exercise-log'
 import { useAddSet, useDeleteSet } from '@/hooks/logs/use-log-set'
 import { useExerciseSearch } from '@/hooks/training/use-exercises'
 import { useExerciseLastSession } from '@/hooks/logs/use-exercise-history'
-import type { WorkoutSession, LoggedExercise, LoggedSet, SetType, ExerciseLastSession } from '@/types/api'
+import { usePrograms } from '@/hooks/training/use-programs'
+import { useI18n } from '@/providers/i18n-provider'
+import type { WorkoutSession, LoggedExercise, LoggedSet, SetType, ExerciseLastSession, DayTag, PrescribedSetTarget } from '@/types/api'
 
 // ── Volume helper ─────────────────────────────────────────────────────────────
 
@@ -315,90 +320,133 @@ function AddSetForm({ sessionId, exerciseId, onAfterLog }: AddSetFormProps) {
   )
 }
 
-// ── PreviousSessionPanel ──────────────────────────────────────────────────────
+// ── ReferencePanel (program targets + last session — compact, mobile-first) ───
 
-interface PreviousSessionPanelProps {
-  data: ExerciseLastSession
-  showAverage: boolean
-  onToggleAverage: () => void
-}
+function ReferencePanel({
+  prescribed,
+  last,
+}: {
+  prescribed: PrescribedSetTarget[]
+  last: ExerciseLastSession | undefined
+}) {
+  const [showAvg, setShowAvg] = useState(false)
 
-function PreviousSessionPanel({ data, showAverage, onToggleAverage }: PreviousSessionPanelProps) {
-  const dateStr = new Date(data.session_date).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
-  const avg = data.average
+  if (prescribed.length === 0 && !last) return null
+
+  const dateStr = last
+    ? new Date(last.session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null
+
+  const maxRows = Math.max(prescribed.length, last?.sets.length ?? 0)
 
   return (
-    <div className="mb-3 rounded-lg border border-border/60 bg-secondary/40 px-3 py-2.5">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Last · {data.session_name} · {dateStr}
+    <div className="mb-3 overflow-hidden rounded-lg border border-border/60 bg-secondary/30 px-2.5 py-2">
+      {/*
+        Single flat grid — header + all data rows share one column-sizing context.
+        auto tracks are sized to the widest cell across every row, so columns
+        always align and nothing ever stretches across the card.
+      */}
+      <div className="grid grid-cols-[16px_90px_max-content] items-center gap-x-2 gap-y-0.5">
+        {/* Header row */}
+        <span />
+        <span className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-primary/80">
+          {prescribed.length > 0 ? 'Targets' : ''}
         </span>
-        <button
-          type="button"
-          onClick={onToggleAverage}
-          aria-label={showAverage ? 'Hide averages' : 'Show averages'}
-          className={cn(
-            'rounded p-0.5 transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            showAverage
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+        <div className="flex items-center gap-1 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {last ? `Last · ${dateStr}` : ''}
+          </span>
+          {last && (
+            <button
+              type="button"
+              onClick={() => setShowAvg((v) => !v)}
+              aria-label={showAvg ? 'Hide averages' : 'Show averages'}
+              className={cn(
+                'shrink-0 rounded p-0.5 transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                showAvg
+                  ? 'text-primary'
+                  : 'text-muted-foreground/40 hover:text-muted-foreground',
+              )}
+            >
+              <MoreHorizontal className="size-3.5" aria-hidden />
+            </button>
           )}
-        >
-          <MoreHorizontal className="size-3.5" aria-hidden />
-        </button>
+        </div>
+
+        {/* Data rows — Fragment keeps each row's 3 cells in the same grid */}
+        {Array.from({ length: maxRows }).map((_, i) => {
+          const p = prescribed[i]
+          const l = last?.sets[i]
+          return (
+            <Fragment key={i}>
+              <span className="text-right text-[10px] tabular-nums text-muted-foreground">
+                {i + 1}
+              </span>
+              <span className="text-xs">
+                {p && (
+                  <>
+                    <span className="font-medium text-foreground">
+                      {p.rep_min === p.rep_max ? p.rep_min : `${p.rep_min}–${p.rep_max}`}
+                      <span className="text-muted-foreground">r</span>
+                    </span>
+                    {p.rpe_target != null && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">
+                        RPE {p.rpe_target}
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
+              <span className="tabular-nums text-[11px] text-muted-foreground">
+                {l && (
+                  <>
+                    {l.weight_kg}
+                    <span className="text-[9px]">kg</span>×{l.reps}
+                    {l.rpe != null && (
+                      <span className="ml-0.5 text-[10px]">RPE {l.rpe}</span>
+                    )}
+                  </>
+                )}
+              </span>
+            </Fragment>
+          )
+        })}
       </div>
 
-      <div className="flex flex-col gap-1">
-        {data.sets.map((set, i) => (
-          <div key={set.id} className="flex items-center gap-2 text-xs">
-            <span className="w-5 shrink-0 text-right tabular-nums text-muted-foreground">
-              #{i + 1}
+      {/* Average stats (expandable) */}
+      {showAvg && last?.average && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border/50 px-2.5 py-1.5">
+          {last.average.weight_kg != null && (
+            <span className="text-[10px]">
+              <span className="font-semibold tabular-nums text-foreground">
+                {last.average.weight_kg.toFixed(1)}
+              </span>
+              <span className="text-muted-foreground"> avg kg</span>
             </span>
-            <SetTypeBadge type={set.set_type} />
-            <span className="font-medium tabular-nums text-foreground">
-              {set.weight_kg} kg × {set.reps}
+          )}
+          {last.average.reps != null && (
+            <span className="text-[10px]">
+              <span className="font-semibold tabular-nums text-foreground">
+                {last.average.reps.toFixed(1)}
+              </span>
+              <span className="text-muted-foreground"> avg reps</span>
             </span>
-            {set.rpe != null && (
-              <span className="text-[11px] text-muted-foreground">@ RPE {set.rpe}</span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {showAverage && (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/50 pt-2">
-          {avg.weight_kg != null && (
-            <div className="text-center">
-              <p className="text-xs font-semibold tabular-nums">{avg.weight_kg.toFixed(1)} kg</p>
-              <p className="text-[10px] text-muted-foreground">avg weight</p>
-            </div>
           )}
-          {avg.reps != null && (
-            <div className="text-center">
-              <p className="text-xs font-semibold tabular-nums">{avg.reps.toFixed(1)}</p>
-              <p className="text-[10px] text-muted-foreground">avg reps</p>
-            </div>
+          {last.average.rpe != null && (
+            <span className="text-[10px]">
+              <span className="font-semibold tabular-nums text-foreground">
+                {last.average.rpe.toFixed(1)}
+              </span>
+              <span className="text-muted-foreground"> RPE</span>
+            </span>
           )}
-          {avg.rpe != null && (
-            <div className="text-center">
-              <p className="text-xs font-semibold tabular-nums">{avg.rpe.toFixed(1)}</p>
-              <p className="text-[10px] text-muted-foreground">avg RPE</p>
-            </div>
-          )}
-          <div className="text-center">
-            <p className="text-xs font-semibold tabular-nums">
-              {avg.total_volume_kg.toFixed(0)} kg
-            </p>
-            <p className="text-[10px] text-muted-foreground">total vol.</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs font-semibold tabular-nums">{avg.sets_count}</p>
-            <p className="text-[10px] text-muted-foreground">sets</p>
-          </div>
+          <span className="text-[10px]">
+            <span className="font-semibold tabular-nums text-foreground">
+              {last.average.total_volume_kg.toFixed(0)}
+            </span>
+            <span className="text-muted-foreground"> kg vol</span>
+          </span>
         </div>
       )}
     </div>
@@ -416,7 +464,6 @@ interface ExerciseBlockProps {
 
 function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet }: ExerciseBlockProps) {
   const [showAddSet, setShowAddSet] = useState(false)
-  const [showAverage, setShowAverage] = useState(false)
   const deleteExercise = useDeleteExercise(sessionId)
   const { data: lastSession } = useExerciseLastSession(exercise.exercise_id)
 
@@ -462,14 +509,8 @@ function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet }: ExerciseB
         </div>
       </div>
 
-      {/* Previous session data — only for catalog exercises */}
-      {lastSession && (
-        <PreviousSessionPanel
-          data={lastSession}
-          showAverage={showAverage}
-          onToggleAverage={() => setShowAverage((v) => !v)}
-        />
-      )}
+      {/* Program targets + last session — combined compact reference */}
+      <ReferencePanel prescribed={exercise.prescribed_sets} last={lastSession ?? undefined} />
 
       {/* Set rows */}
       {exercise.logged_sets.length > 0 && (
@@ -566,12 +607,30 @@ function SetRow({ set, sessionId, exerciseId }: SetRowProps) {
 const DAY_TAG_GROUPS: Record<string, string[]> = {
   push:      ['chest', 'shoulders', 'triceps'],
   pull:      ['back', 'biceps'],
+  chest:     ['chest'],
+  back:      ['back'],
+  shoulders: ['shoulders'],
+  arms:      ['biceps', 'triceps', 'forearms'],
   legs:      ['quads', 'hamstrings', 'glutes', 'calves'],
+  glutes:    ['glutes', 'hamstrings'],
+  core:      ['core'],
   upper:     ['chest', 'back', 'shoulders', 'biceps', 'triceps'],
   lower:     ['quads', 'hamstrings', 'glutes', 'calves'],
   full_body: ['full_body', 'chest', 'back', 'quads'],
   cardio:    ['core', 'full_body'],
 }
+
+const TAG_LABEL: Record<string, string> = {
+  push: 'Push', pull: 'Pull', chest: 'Chest', back: 'Back',
+  shoulders: 'Shoulders', arms: 'Arms', legs: 'Legs', glutes: 'Glutes',
+  core: 'Core', upper: 'Upper', lower: 'Lower', full_body: 'Full Body',
+  cardio: 'Cardio', custom: 'Custom',
+}
+
+const ALL_DAY_TAGS: DayTag[] = [
+  'push', 'pull', 'chest', 'back', 'shoulders', 'arms',
+  'legs', 'glutes', 'core', 'upper', 'lower', 'full_body', 'cardio', 'custom',
+]
 
 const MUSCLE_LABEL: Record<string, string> = {
   chest: 'Chest', back: 'Back', shoulders: 'Shoulders',
@@ -847,6 +906,320 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
   )
 }
 
+// ── DiscardDialog ─────────────────────────────────────────────────────────────
+
+interface DiscardDialogProps {
+  sessionId: string
+  open: boolean
+  onClose: () => void
+}
+
+function DiscardDialog({ sessionId, open, onClose }: DiscardDialogProps) {
+  const router = useRouter()
+  const discard = useDiscardSession(sessionId)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label="Discard workout"
+        className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-border bg-background p-5 shadow-xl sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-sm sm:-translate-x-1/2"
+      >
+        <h2 className="text-base font-semibold text-foreground">Discard workout?</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          This will permanently delete this session and all logged sets. You cannot undo this.
+        </p>
+        <div className="mt-5 flex gap-2.5">
+          <Button variant="outline" className="flex-1" onClick={onClose}>
+            Keep it
+          </Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            disabled={discard.isPending}
+            onClick={() =>
+              discard.mutate(undefined, {
+                onSuccess: () => router.push('/logs'),
+              })
+            }
+          >
+            {discard.isPending ? (
+              <><Loader2 className="size-4 animate-spin" aria-hidden />Discarding…</>
+            ) : (
+              'Discard'
+            )}
+          </Button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── TagPickerDrawer ───────────────────────────────────────────────────────────
+
+interface TagPickerDrawerProps {
+  sessionId: string
+  currentTag: DayTag | null
+  open: boolean
+  onClose: () => void
+}
+
+function TagPickerDrawer({ sessionId, currentTag, open, onClose }: TagPickerDrawerProps) {
+  const update = useUpdateSession(sessionId)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  function pick(tag: DayTag) {
+    if (tag === currentTag) { onClose(); return }
+    update.mutate({ day_tag: tag }, { onSuccess: onClose })
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Change day tag"
+        className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-background shadow-2xl"
+      >
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="h-1 w-10 rounded-full bg-border" aria-hidden />
+        </div>
+        <div className="flex items-center justify-between px-5 pb-3 pt-1">
+          <h2 className="text-base font-semibold text-foreground">Change day tag</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className={cn(
+              'rounded-lg p-1.5 text-muted-foreground transition-colors',
+              'hover:bg-secondary hover:text-foreground',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2.5 px-5 pb-8">
+          {ALL_DAY_TAGS.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              disabled={update.isPending}
+              onClick={() => pick(tag)}
+              aria-pressed={tag === currentTag}
+              className={cn(
+                'rounded-full px-4 py-1.5 text-sm font-medium transition-colors duration-150',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'disabled:pointer-events-none disabled:opacity-60',
+                tag === currentTag
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-foreground hover:bg-secondary/70',
+              )}
+            >
+              {TAG_LABEL[tag] ?? tag}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── LinkProgramDrawer ─────────────────────────────────────────────────────────
+
+interface LinkProgramDrawerProps {
+  sessionId: string
+  currentProgramDayId: string | null
+  open: boolean
+  onClose: () => void
+}
+
+function LinkProgramDrawer({
+  sessionId,
+  currentProgramDayId,
+  open,
+  onClose,
+}: LinkProgramDrawerProps) {
+  const update = useUpdateSession(sessionId)
+  const { data: programs = [], isLoading } = usePrograms()
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  function link(dayId: string) {
+    if (dayId === currentProgramDayId) { onClose(); return }
+    update.mutate({ program_day_id: dayId }, { onSuccess: onClose })
+  }
+
+  function unlink() {
+    update.mutate({ program_day_id: null }, { onSuccess: onClose })
+  }
+
+  const isLinked = currentProgramDayId !== null
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Link to program day"
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[75vh] flex-col rounded-t-2xl bg-background shadow-2xl"
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="h-1 w-10 rounded-full bg-border" aria-hidden />
+        </div>
+
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-1">
+          <h2 className="text-base font-semibold text-foreground">Link to program</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className={cn(
+              'rounded-lg p-1.5 text-muted-foreground transition-colors',
+              'hover:bg-secondary hover:text-foreground',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 pb-2">
+          {isLoading ? (
+            <div className="flex flex-col gap-2 py-2">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-14 animate-pulse rounded-xl bg-secondary" />
+              ))}
+            </div>
+          ) : programs.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <ClipboardList className="size-10 text-muted-foreground/40" aria-hidden />
+              <p className="font-semibold text-foreground">No programs yet</p>
+              <p className="text-sm text-muted-foreground">
+                Create a training program first, then link your sessions to it.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5 py-1">
+              {programs.map((program) => (
+                <div key={program.id}>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {program.name}
+                  </p>
+                  {program.days.length === 0 ? (
+                    <p className="text-xs text-muted-foreground px-1">No days added yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {program.days.map((day) => {
+                        const isSelected = day.id === currentProgramDayId
+                        return (
+                          <button
+                            key={day.id}
+                            type="button"
+                            disabled={update.isPending}
+                            onClick={() => link(day.id)}
+                            aria-pressed={isSelected}
+                            className={cn(
+                              'flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              'disabled:pointer-events-none disabled:opacity-60',
+                              isSelected
+                                ? 'bg-primary/10'
+                                : 'hover:bg-secondary/80 active:bg-secondary',
+                            )}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className={cn(
+                                  'truncate text-sm font-medium',
+                                  isSelected ? 'text-primary' : 'text-foreground',
+                                )}
+                              >
+                                {day.name}
+                              </p>
+                            </div>
+                            <span
+                              className={cn(
+                                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                                isSelected
+                                  ? 'bg-primary/20 text-primary'
+                                  : 'bg-secondary text-muted-foreground',
+                              )}
+                            >
+                              {TAG_LABEL[day.day_tag] ?? day.day_tag}
+                            </span>
+                            {isSelected && update.isPending ? (
+                              <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+                            ) : isSelected ? (
+                              <div
+                                className="size-4 shrink-0 rounded-full bg-primary"
+                                aria-label="Currently linked"
+                              />
+                            ) : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Unlink footer */}
+        {isLinked && (
+          <div className="shrink-0 border-t border-border px-5 py-3">
+            <button
+              type="button"
+              disabled={update.isPending}
+              onClick={unlink}
+              className={cn(
+                'text-sm font-medium text-destructive transition-colors',
+                'hover:text-destructive/80 disabled:opacity-50',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              )}
+            >
+              {update.isPending ? 'Removing…' : 'Remove program link'}
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ── FinishDialog ──────────────────────────────────────────────────────────────
 
 interface FinishDialogProps {
@@ -1014,18 +1387,33 @@ function SessionSkeleton() {
 export default function ActiveSessionPage({
   params,
 }: {
-  params: { sessionId: string }
+  params: Promise<{ sessionId: string }>
 }) {
   const router = useRouter()
-  const { sessionId } = params
+  const { sessionId } = use(params)
+  const { t } = useI18n()
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
+  const [linkProgramOpen, setLinkProgramOpen] = useState(false)
   const [restStartedAt, setRestStartedAt] = useState<Date | null>(null)
   const [totalRestSeconds, setTotalRestSeconds] = useState(0)
   const [totalLoggedWorkSeconds, setTotalLoggedWorkSeconds] = useState(0)
 
   const { data: session, isLoading, error } = useSession(sessionId)
+  const { data: programs = [] } = usePrograms()
+
+  // Resolve linked program day name from cached programs list
+  const linkedDay = useMemo(() => {
+    if (!session?.program_day_id) return null
+    for (const p of programs) {
+      const day = p.days.find((d) => d.id === session.program_day_id)
+      if (day) return day
+    }
+    return null
+  }, [programs, session?.program_day_id])
 
   // Session elapsed — page-level so we can derive working / resting metrics
   const [sessionSeconds, setSessionSeconds] = useState(0)
@@ -1077,7 +1465,7 @@ export default function ActiveSessionPage({
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur sm:px-6">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -1086,17 +1474,64 @@ export default function ActiveSessionPage({
           >
             <ArrowLeft className="size-5" aria-hidden />
           </Button>
-          <h1 className="text-sm font-semibold text-foreground">
-            {sessionLabel(session)}
-          </h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold text-foreground">
+              {sessionLabel(session)}
+            </h1>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+              {/* Tag chip — opens tag picker */}
+              <button
+                type="button"
+                onClick={() => setTagPickerOpen(true)}
+                aria-label={session.day_tag ? `Day tag: ${TAG_LABEL[session.day_tag]}. Tap to change` : 'Add day tag'}
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  session.day_tag
+                    ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {session.day_tag ? TAG_LABEL[session.day_tag] : '+ Add tag'}
+              </button>
+
+              {/* Program link chip — opens program picker */}
+              <button
+                type="button"
+                onClick={() => setLinkProgramOpen(true)}
+                aria-label={linkedDay ? `Linked to ${linkedDay.name}. Tap to change` : 'Link to a program day'}
+                className={cn(
+                  'flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  session.program_day_id
+                    ? 'bg-secondary text-foreground hover:bg-secondary/70'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <ClipboardList className="size-3 shrink-0" aria-hidden />
+                {linkedDay ? linkedDay.name : 'Link program'}
+              </button>
+            </div>
+          </div>
         </div>
-        <Button
-          size="sm"
-          onClick={() => setFinishOpen(true)}
-          aria-label="Finish this workout"
-        >
-          Finish
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDiscardOpen(true)}
+            aria-label="Discard this workout"
+            className="text-muted-foreground hover:text-destructive"
+          >
+            Discard
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setFinishOpen(true)}
+            aria-label="Finish this workout"
+          >
+            Finish
+          </Button>
+        </div>
       </header>
 
       {/* ── Metrics strip — elapsed / working / resting / volume ────────────── */}
@@ -1139,7 +1574,7 @@ export default function ActiveSessionPage({
       )}
 
       {/* ── Exercise list ─────────────────────────────────────────────────────── */}
-      <main className="flex-1 space-y-3 overflow-y-auto p-4 pb-28 sm:p-6">
+      <main className="flex-1 space-y-3 overflow-y-auto p-4 pb-36 sm:p-6 lg:pb-24">
         {session.logged_exercises.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <Dumbbell className="size-10 text-muted-foreground/40" aria-hidden />
@@ -1163,16 +1598,16 @@ export default function ActiveSessionPage({
         )}
       </main>
 
-      {/* ── Sticky bottom bar — Add exercise ──────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-background/90 px-4 py-3 backdrop-blur sm:px-6">
+      {/* ── Floating add-exercise button ──────────────────────────────────────── */}
+      <div className="fixed bottom-20 left-0 right-0 z-30 flex justify-center px-4 lg:bottom-6 lg:left-64">
         <Button
-          variant="outline"
-          className="w-full"
+          size="lg"
+          className="h-12 gap-2.5 rounded-full px-10 text-base font-semibold shadow-[0_4px_0_rgba(109,40,217,1),0_8px_24px_rgba(124,58,237,0.40)] transition-all duration-100 active:translate-y-[3px] active:shadow-[0_1px_0_rgba(109,40,217,1),0_2px_8px_rgba(124,58,237,0.25)]"
           onClick={() => setDrawerOpen(true)}
-          aria-label="Add a new exercise to this session"
+          aria-label={t.logs.addExercise}
         >
-          <Plus className="size-4" aria-hidden />
-          Add Exercise
+          <Plus className="size-5" aria-hidden />
+          {t.logs.addExercise}
         </Button>
       </div>
 
@@ -1189,6 +1624,29 @@ export default function ActiveSessionPage({
         sessionId={sessionId}
         open={finishOpen}
         onClose={() => setFinishOpen(false)}
+      />
+
+      {/* ── Discard dialog ─────────────────────────────────────────────────────── */}
+      <DiscardDialog
+        sessionId={sessionId}
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+      />
+
+      {/* ── Tag picker drawer ──────────────────────────────────────────────────── */}
+      <TagPickerDrawer
+        sessionId={sessionId}
+        currentTag={session.day_tag}
+        open={tagPickerOpen}
+        onClose={() => setTagPickerOpen(false)}
+      />
+
+      {/* ── Link program drawer ────────────────────────────────────────────────── */}
+      <LinkProgramDrawer
+        sessionId={sessionId}
+        currentProgramDayId={session.program_day_id}
+        open={linkProgramOpen}
+        onClose={() => setLinkProgramOpen(false)}
       />
     </div>
   )

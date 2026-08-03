@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.database import Base
 from db.constants.logs import SCHEMA
+from db.constants.training import DayTag
 
 
 class WorkoutSession(Base):
@@ -47,12 +48,7 @@ class WorkoutSession(Base):
         nullable=False,
     )
     day_tag: Mapped[str | None] = mapped_column(
-        Enum(
-            "push", "pull", "legs", "upper", "lower", "full_body", "cardio", "custom",
-            name="day_tag",
-            schema="training",
-            create_type=False,
-        ),
+        Enum(*DayTag.ALL, name="day_tag", schema="training", create_type=False),
         nullable=True,
     )
     started_at: Mapped[datetime] = mapped_column(

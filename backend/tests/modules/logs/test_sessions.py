@@ -721,3 +721,200 @@ async def test_get_last_session_returns_previous_sets(client: AsyncClient) -> No
 
     # Clean up the active session (avoid leaking state)
     await client.delete(f"/api/v1/logs/sessions/{session2['id']}", headers=headers)
+
+
+@pytest.mark.asyncio
+async def test_update_session_tag_returns_updated(client: AsyncClient) -> None:
+    org_id = await _make_org(client, "UpdateTag Gym")
+    await _register(client, org_id, email="updatetag@test.com")
+    headers = await _auth_headers(client, "updatetag@test.com")
+    session = await _start_session(client, headers)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"day_tag": "chest"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["day_tag"] == "chest"
+
+
+@pytest.mark.asyncio
+async def test_update_finished_session_returns_409(client: AsyncClient) -> None:
+    org_id = await _make_org(client, "UpdateFinished Gym")
+    await _register(client, org_id, email="updatefinished@test.com")
+    headers = await _auth_headers(client, "updatefinished@test.com")
+    session = await _start_session(client, headers)
+    await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}/finish", json={}, headers=headers
+    )
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"day_tag": "back"},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Link session to program day
+# ---------------------------------------------------------------------------
+
+
+async def _make_program_with_day(
+    client: AsyncClient,
+    headers: dict,
+    *,
+    program_name: str = "My Program",
+    day_name: str = "Day 1",
+    day_tag: str = "push",
+) -> tuple[str, str]:
+    """Create a program + one day and return (program_id, day_id)."""
+    prog_resp = await client.post(
+        "/api/v1/training/programs",
+        json={"name": program_name},
+        headers=headers,
+    )
+    assert prog_resp.status_code == 201, prog_resp.text
+    program_id = prog_resp.json()["id"]
+
+    day_resp = await client.post(
+        f"/api/v1/training/programs/{program_id}/days",
+        json={"name": day_name, "position": 1, "day_tag": day_tag},
+        headers=headers,
+    )
+    assert day_resp.status_code == 201, day_resp.text
+    return program_id, day_resp.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_link_session_to_program_day_sets_program_day_id(
+    client: AsyncClient,
+) -> None:
+    org_id = await _make_org(client, "LinkDay Gym")
+    await _register(client, org_id, email="linkday@test.com")
+    headers = await _auth_headers(client, "linkday@test.com")
+
+    _, day_id = await _make_program_with_day(client, headers)
+    session = await _start_session(client, headers)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": day_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["program_day_id"] == day_id
+
+
+@pytest.mark.asyncio
+async def test_link_session_auto_syncs_day_tag_from_program_day(
+    client: AsyncClient,
+) -> None:
+    org_id = await _make_org(client, "AutoSync Gym")
+    await _register(client, org_id, email="autosync@test.com")
+    headers = await _auth_headers(client, "autosync@test.com")
+
+    _, day_id = await _make_program_with_day(client, headers, day_tag="legs")
+    session = await _start_session(client, headers)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": day_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["program_day_id"] == day_id
+    assert data["day_tag"] == "legs"  # auto-synced from program day
+
+
+@pytest.mark.asyncio
+async def test_link_session_explicit_day_tag_takes_priority(
+    client: AsyncClient,
+) -> None:
+    org_id = await _make_org(client, "Priority Gym")
+    await _register(client, org_id, email="priority@test.com")
+    headers = await _auth_headers(client, "priority@test.com")
+
+    _, day_id = await _make_program_with_day(client, headers, day_tag="push")
+    session = await _start_session(client, headers)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": day_id, "day_tag": "chest"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["program_day_id"] == day_id
+    assert data["day_tag"] == "chest"  # explicit day_tag wins over auto-sync
+
+
+@pytest.mark.asyncio
+async def test_link_session_nonexistent_day_returns_404(
+    client: AsyncClient,
+) -> None:
+    org_id = await _make_org(client, "NoDay Gym")
+    await _register(client, org_id, email="noday@test.com")
+    headers = await _auth_headers(client, "noday@test.com")
+
+    session = await _start_session(client, headers)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": str(uuid.uuid4())},
+        headers=headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_link_session_to_other_org_program_day_returns_403(
+    client: AsyncClient,
+) -> None:
+    # Org A — creates a program day
+    org_a = await _make_org(client, "Org A Gym")
+    await _register(client, org_a, email="orga@test.com", role="trainer")
+    headers_a = await _auth_headers(client, "orga@test.com")
+    _, day_id = await _make_program_with_day(client, headers_a)
+
+    # Org B — athlete tries to link to Org A's day
+    org_b = await _make_org(client, "Org B Gym")
+    await _register(client, org_b, email="orgb@test.com")
+    headers_b = await _auth_headers(client, "orgb@test.com")
+    session = await _start_session(client, headers_b)
+
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": day_id},
+        headers=headers_b,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_unlink_session_from_program_day(client: AsyncClient) -> None:
+    org_id = await _make_org(client, "Unlink Gym")
+    await _register(client, org_id, email="unlink@test.com")
+    headers = await _auth_headers(client, "unlink@test.com")
+
+    _, day_id = await _make_program_with_day(client, headers)
+    session = await _start_session(client, headers)
+
+    # First link it
+    await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": day_id},
+        headers=headers,
+    )
+
+    # Then unlink
+    resp = await client.patch(
+        f"/api/v1/logs/sessions/{session['id']}",
+        json={"program_day_id": None},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["program_day_id"] is None

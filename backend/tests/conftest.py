@@ -5,11 +5,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+import db.models.analytics  # noqa: F401
+
 # Import all models so Base.metadata is fully populated before create_all
 import db.models.identity  # noqa: F401
-import db.models.training  # noqa: F401
 import db.models.logs  # noqa: F401
-import db.models.analytics  # noqa: F401
+import db.models.training  # noqa: F401
 from core.config import settings
 from core.database import Base, get_db
 from main import app

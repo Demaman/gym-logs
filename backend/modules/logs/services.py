@@ -11,19 +11,31 @@ from db.repositories.logs import (
     LoggedSetRepository,
     WorkoutSessionRepository,
 )
+from db.repositories.training import (
+    ExerciseRepository,
+    ProgramDayRepository,
+    ProgramRepository,
+)
 from modules.logs.schemas import (
     ExerciseAverage,
+    ExerciseHistoryPoint,
+    ExerciseHistorySeries,
     FinishSessionRequest,
     LoggedExerciseCreate,
     LoggedExerciseResponse,
     LoggedSetCreate,
     LoggedSetResponse,
     LoggedSetUpdate,
+    PrescribedSetTarget,
     PreviousExerciseSession,
+    ProgressStats,
     SessionSummary,
+    WeeklyVolumePoint,
+    WeeklyVolumeSeries,
     WorkoutSessionCreate,
     WorkoutSessionResponse,
 )
+from modules.logs.schemas.session import UpdateSessionRequest
 
 
 class SessionService:
@@ -31,6 +43,9 @@ class SessionService:
         self._session_repo = WorkoutSessionRepository(session)
         self._ex_repo = LoggedExerciseRepository(session)
         self._set_repo = LoggedSetRepository(session)
+        self._program_day_repo = ProgramDayRepository(session)
+        self._program_repo = ProgramRepository(session)
+        self._exercise_repo = ExerciseRepository(session)
 
     def _ids(self, current_user: dict) -> tuple[uuid.UUID, uuid.UUID | None]:
         user_id = uuid.UUID(current_user["user_id"])
@@ -42,7 +57,7 @@ class SessionService:
         return user_id, org_id
 
     async def _build_summary(
-        self, session_id: uuid.UUID
+        self, session_id: uuid.UUID, program_day_id: uuid.UUID | None = None
     ) -> tuple[list, SessionSummary]:
         """Load exercises+sets and compute summary. Returns (exercises, summary)."""
         exercises = await self._ex_repo.list_for_session(session_id)
@@ -58,6 +73,8 @@ class SessionService:
                 if s.counts_volume:
                     total_volume += s.weight_kg * s.reps
                     working_sets += 1
+        if program_day_id:
+            await self._attach_prescribed_sets(exercises, program_day_id)
         summary = SessionSummary(
             duration_seconds=None,
             total_volume_kg=round(total_volume, 2),
@@ -66,6 +83,28 @@ class SessionService:
             exercises_count=len(exercises),
         )
         return exercises, summary
+
+    async def _attach_prescribed_sets(
+        self, exercises: list, program_day_id: uuid.UUID
+    ) -> None:
+        """Attach prescribed set targets to exercises, matched by position."""
+        day = await self._program_day_repo.get_by_id(program_day_id)
+        if not day:
+            return
+        pe_by_pos = {pe.position: pe for pe in day.exercises}
+        for ex in exercises:
+            pe = pe_by_pos.get(ex.position)
+            if pe and pe.prescribed_sets:
+                ex._prescribed_sets = [  # noqa: SLF001
+                    PrescribedSetTarget(
+                        set_type=ps.set_type,
+                        rep_min=ps.rep_min,
+                        rep_max=ps.rep_max,
+                        rpe_target=ps.rpe_target,
+                        rest_seconds=ps.rest_seconds,
+                    )
+                    for ps in sorted(pe.prescribed_sets, key=lambda s: s.position)
+                ]
 
     @staticmethod
     def _ws_scalar(ws, *, exercises: list, summary: SessionSummary) -> WorkoutSessionResponse:
@@ -95,6 +134,7 @@ class SessionService:
                 position=ex.position,
                 notes=ex.notes,
                 logged_sets=[LoggedSetResponse.model_validate(s) for s in getattr(ex, "_loaded_sets", [])],
+                prescribed_sets=getattr(ex, "_prescribed_sets", []),
             )
             for ex in exercises
         ]
@@ -144,11 +184,38 @@ class SessionService:
             mode=data.mode,
             day_tag=data.day_tag,
         )
-        empty_summary = SessionSummary(
+
+        # Pre-populate exercises from the program day
+        pre_loaded: list = []
+        if data.program_day_id:
+            day = await self._program_day_repo.get_by_id(data.program_day_id)
+            if day and day.exercises:
+                for pe in sorted(day.exercises, key=lambda e: e.position):
+                    exercise = await self._exercise_repo.get_by_id(pe.exercise_id)
+                    logged = await self._ex_repo.create(
+                        session_id=ws.id,
+                        exercise_id=pe.exercise_id,
+                        exercise_name_free=exercise.name if exercise else None,
+                        position=pe.position,
+                    )
+                    logged._loaded_sets = []  # noqa: SLF001
+                    logged._prescribed_sets = [  # noqa: SLF001
+                        PrescribedSetTarget(
+                            set_type=ps.set_type,
+                            rep_min=ps.rep_min,
+                            rep_max=ps.rep_max,
+                            rpe_target=ps.rpe_target,
+                            rest_seconds=ps.rest_seconds,
+                        )
+                        for ps in sorted(pe.prescribed_sets, key=lambda s: s.position)
+                    ]
+                    pre_loaded.append(logged)
+
+        summary = SessionSummary(
             duration_seconds=None, total_volume_kg=0.0,
-            working_sets_count=0, sets_by_type={}, exercises_count=0,
+            working_sets_count=0, sets_by_type={}, exercises_count=len(pre_loaded),
         )
-        return self._ws_scalar(ws, exercises=[], summary=empty_summary)
+        return self._ws_scalar(ws, exercises=pre_loaded, summary=summary)
 
     async def get_active(self, current_user: dict) -> WorkoutSessionResponse | None:
         user_id, org_id = self._ids(current_user)
@@ -157,7 +224,7 @@ class SessionService:
         )
         if not ws:
             return None
-        exercises, summary = await self._build_summary(ws.id)
+        exercises, summary = await self._build_summary(ws.id, ws.program_day_id)
         return self._to_response(ws, exercises, summary)
 
     async def get_session(
@@ -169,7 +236,7 @@ class SessionService:
         )
         if not ws:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-        exercises, summary = await self._build_summary(ws.id)
+        exercises, summary = await self._build_summary(ws.id, ws.program_day_id)
         return self._to_response(ws, exercises, summary)
 
     async def list_sessions(
@@ -216,6 +283,57 @@ class SessionService:
         )
         return self._to_response(ws, exercises, summary)
 
+    async def update_session(
+        self, current_user: dict, session_id: uuid.UUID, data: UpdateSessionRequest
+    ) -> WorkoutSessionResponse:
+        user_id, org_id = self._ids(current_user)
+        ws = await self._session_repo.get_by_id(
+            session_id, athlete_id=user_id, organization_id=org_id
+        )
+        if ws is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+        if ws.finished_at is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Cannot update a finished session"
+            )
+        if data.name is not None:
+            ws.name = data.name
+        if data.day_tag is not None:
+            ws.day_tag = data.day_tag
+        if "program_day_id" in data.model_fields_set:
+            if data.program_day_id is not None:
+                if org_id is None:
+                    raise HTTPException(
+                        status.HTTP_403_FORBIDDEN,
+                        "Linking to a program day requires an organization context",
+                    )
+                day = await self._program_day_repo.get_by_id(data.program_day_id)
+                if not day:
+                    raise HTTPException(
+                        status.HTTP_404_NOT_FOUND, "Program day not found"
+                    )
+                program = await self._program_repo.get_by_id(
+                    day.program_id, organization_id=org_id
+                )
+                if not program:
+                    raise HTTPException(
+                        status.HTTP_403_FORBIDDEN,
+                        "Program day does not belong to your organization",
+                    )
+                ws.program_day_id = data.program_day_id
+                # Auto-sync day_tag unless caller explicitly provided one
+                if "day_tag" not in data.model_fields_set and day.day_tag:
+                    ws.day_tag = day.day_tag
+            else:
+                ws.program_day_id = None
+        await self._session_repo.save(ws)
+        exercises = await self._ex_repo.list_for_session(ws.id)
+        empty_summary = SessionSummary(
+            duration_seconds=None, total_volume_kg=0.0,
+            working_sets_count=0, sets_by_type={}, exercises_count=0,
+        )
+        return self._ws_scalar(ws, exercises=exercises, summary=empty_summary)
+
     async def delete_session(
         self, current_user: dict, session_id: uuid.UUID
     ) -> None:
@@ -226,6 +344,37 @@ class SessionService:
         if not ws:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
         await self._session_repo.delete(ws)
+
+    async def get_progress_stats(self, current_user: dict) -> ProgressStats:
+        user_id, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_progress_stats(
+            organization_id=org_id, athlete_id=user_id
+        )
+        return ProgressStats(**raw)
+
+    async def get_weekly_volume(
+        self, current_user: dict, *, weeks: int = 12
+    ) -> WeeklyVolumeSeries:
+        user_id, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_weekly_volume(
+            organization_id=org_id, athlete_id=user_id, weeks=weeks
+        )
+        return WeeklyVolumeSeries(points=[WeeklyVolumePoint(**r) for r in raw])
+
+    async def get_exercise_history(
+        self, current_user: dict, catalog_exercise_id: uuid.UUID
+    ) -> ExerciseHistorySeries:
+        user_id, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_exercise_history(
+            organization_id=org_id,
+            athlete_id=user_id,
+            catalog_exercise_id=catalog_exercise_id,
+        )
+        exercise = await self._exercise_repo.get_by_id(catalog_exercise_id)
+        return ExerciseHistorySeries(
+            exercise_name=exercise.name if exercise else None,
+            points=[ExerciseHistoryPoint(**r) for r in raw],
+        )
 
 
 class ExerciseLogService:
@@ -407,6 +556,8 @@ class SetLogService:
             is_to_failure=data.is_to_failure,
             counts_volume=counts_volume,
             tempo=data.tempo,
+
+            
             notes=data.notes,
         )
         return LoggedSetResponse.model_validate(logged)
