@@ -12,9 +12,14 @@ __pycache__/
 build/
 .venv/
 
-# Claude Code
+# Claude Code (settings.local.json and memory — never commit)
 .claude/settings.local.json
+.claude/projects/
 CLAUDE.local.md
+
+# Scratch files
+training-mockup.html
+frontend/.pnpm-store/
 
 # IDE
 .vscode/*
