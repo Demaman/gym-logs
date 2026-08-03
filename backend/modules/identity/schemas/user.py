@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     password: str
     role: Literal["athlete", "trainer", "gym_admin"]
     organization_id: uuid.UUID | None = None
+    join_code: str | None = None
 
     @field_validator("password")
     @classmethod

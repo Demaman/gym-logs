@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -29,6 +30,7 @@ from modules.identity.schemas import (
     InviteResponse,
     MembershipCreate,
     MembershipResponse,
+    OrgLookupResponse,
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
@@ -41,6 +43,11 @@ from modules.identity.schemas import (
 
 _REFRESH_TTL_SECONDS = 60 * 60 * 24 * 7
 _INVITE_TTL_DAYS = 7
+_JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _generate_join_code() -> str:
+    return "".join(secrets.choice(_JOIN_CODE_ALPHABET) for _ in range(6))
 
 
 def _enrich_membership(
@@ -78,9 +85,21 @@ class IdentityService:
 
     async def create_organization(self, data: OrganizationCreate) -> OrganizationResponse:
         extra = data.model_dump(exclude={"name"}, exclude_none=True)
+        # Generate a unique join code, retrying on the rare collision.
+        for _ in range(10):
+            candidate = _generate_join_code()
+            if not await self._org_repo.get_by_join_code(candidate):
+                extra["join_code"] = candidate
+                break
         org = await self._org_repo.create(name=data.name, **extra)
         await publish("organization.created", {"organization_id": str(org.id), "name": org.name})
         return OrganizationResponse.model_validate(org)
+
+    async def get_organization_by_join_code(self, join_code: str) -> OrgLookupResponse:
+        org = await self._org_repo.get_by_join_code(join_code.upper().strip())
+        if not org:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No gym found with that code")
+        return OrgLookupResponse(id=org.id, name=org.name)
 
     async def get_my_organization(self, user: CurrentUser) -> OrganizationResponse:
         org_id = self._org_id(user)
@@ -108,14 +127,22 @@ class IdentityService:
     async def register_user(self, data: UserCreate) -> UserResponse:
         if await self._user_repo.get_by_email(data.email):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-        if data.organization_id is not None:
-            if not await self._org_repo.get_by_id(data.organization_id):
+
+        org_id = data.organization_id
+        if data.join_code:
+            org = await self._org_repo.get_by_join_code(data.join_code.upper().strip())
+            if not org:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No gym found with that join code")
+            org_id = org.id
+        elif org_id is not None:
+            if not await self._org_repo.get_by_id(org_id):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
         user = await self._user_repo.create(
             email=data.email,
             hashed_password=hash_password(data.password),
             role=data.role,
-            organization_id=data.organization_id,
+            organization_id=org_id,
         )
         await publish("user.registered", {
             "user_id": str(user.id),
@@ -146,8 +173,16 @@ class IdentityService:
             payload = decode_token(refresh_token)
         except JWTError:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        # Re-read user from DB so token always reflects current org/role.
+        user = await self._user_repo.get_by_id(uuid.UUID(payload["sub"]))
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         await self._redis.delete(f"refresh:{refresh_token}")
-        token_data = {"sub": payload["sub"], "org": payload.get("org"), "role": payload["role"]}
+        token_data = {
+            "sub": str(user.id),
+            "org": str(user.organization_id) if user.organization_id else None,
+            "role": user.role,
+        }
         new_access = create_access_token(token_data)
         new_refresh = create_refresh_token(token_data)
         await self._redis.set(f"refresh:{new_refresh}", stored, ex=_REFRESH_TTL_SECONDS)
@@ -294,6 +329,20 @@ class IdentityService:
             await self._user_repo.update(athlete, organization_id=None)
         await self._membership_repo.delete(membership)
 
+    async def leave_organization(self, user: CurrentUser) -> None:
+        if user.get("role") != Role.ATHLETE:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only athletes can leave an organization")
+        uid = self._uid(user)
+        db_user = await self._user_repo.get_by_id(uid)
+        if not db_user:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+        if not db_user.organization_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "You are not part of any organization")
+        memberships = await self._membership_repo.list_by_athlete(uid, db_user.organization_id)
+        for m in memberships:
+            await self._membership_repo.delete(m)
+        await self._user_repo.update(db_user, organization_id=None)
+
     # ── invites ───────────────────────────────────────────────────────────────
 
     async def invite_member(self, user: CurrentUser, data: InviteCreate) -> InviteResponse:
@@ -377,18 +426,23 @@ class IdentityService:
         if db_user.organization_id is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "You already belong to an organization")  # noqa: E501
         await self._user_repo.update(db_user, organization_id=invite.organization_id)
-        membership = await self._membership_repo.create(
-            organization_id=invite.organization_id,
-            trainer_id=invite.invited_by_id,
-            athlete_id=uid,
-        )
         await self._invite_repo.accept(invite)
-        await publish("membership.created", {
-            "membership_id": str(membership.id),
-            "organization_id": str(invite.organization_id),
-            "trainer_id": str(invite.invited_by_id),
-            "athlete_id": str(uid),
-        })
+        # Only create a trainer↔athlete membership when the inviter is a trainer.
+        # Gym-admin invites link the athlete to the org only; trainer assignment
+        # happens separately.
+        inviter = await self._user_repo.get_by_id(invite.invited_by_id)
+        if inviter and inviter.role == Role.TRAINER:
+            membership = await self._membership_repo.create(
+                organization_id=invite.organization_id,
+                trainer_id=invite.invited_by_id,
+                athlete_id=uid,
+            )
+            await publish("membership.created", {
+                "membership_id": str(membership.id),
+                "organization_id": str(invite.organization_id),
+                "trainer_id": str(invite.invited_by_id),
+                "athlete_id": str(uid),
+            })
 
     async def decline_invite(self, user: CurrentUser, invite_id: uuid.UUID) -> None:
         if user.get("role") != Role.ATHLETE:

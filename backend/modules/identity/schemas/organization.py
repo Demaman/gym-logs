@@ -31,6 +31,7 @@ class OrganizationUpdate(BaseModel):
 class OrganizationResponse(BaseModel):
     id: uuid.UUID
     name: str
+    join_code: str | None = None
     cnpj: str | None = None
     phone: str | None = None
     contact_email: str | None = None
@@ -42,3 +43,8 @@ class OrganizationResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class OrgLookupResponse(BaseModel):
+    id: uuid.UUID
+    name: str

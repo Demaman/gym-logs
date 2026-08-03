@@ -29,3 +29,9 @@ class OrganizationRepository:
             select(Organization).where(Organization.id == org_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_join_code(self, join_code: str) -> Organization | None:
+        result = await self._s.execute(
+            select(Organization).where(Organization.join_code == join_code.upper())
+        )
+        return result.scalar_one_or_none()

@@ -12,6 +12,7 @@ from modules.identity.schemas import (
     LoginRequest,
     MembershipCreate,
     MembershipResponse,
+    OrgLookupResponse,
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
@@ -34,6 +35,12 @@ def _svc(db: AsyncSession = Depends(get_db)) -> IdentityService:
 @router.post("/organizations", response_model=OrganizationResponse, status_code=201)
 async def create_organization(data: OrganizationCreate, svc: IdentityService = Depends(_svc)) -> OrganizationResponse:
     return await svc.create_organization(data)
+
+
+# /organizations/by-code must come BEFORE /organizations/current to avoid ambiguity
+@router.get("/organizations/by-code/{code}", response_model=OrgLookupResponse)
+async def lookup_org_by_join_code(code: str, svc: IdentityService = Depends(_svc)) -> OrgLookupResponse:
+    return await svc.get_organization_by_join_code(code)
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=201)
@@ -96,6 +103,11 @@ async def list_athletes(current_user: CurrentUser, svc: IdentityService = Depend
 @router.get("/members/my-trainer", response_model=MembershipResponse | None)
 async def get_my_trainer(current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> MembershipResponse | None:
     return await svc.get_my_trainer(current_user)
+
+
+@router.post("/members/leave", status_code=204)
+async def leave_organization(current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> None:
+    await svc.leave_organization(current_user)
 
 
 @router.post("/memberships", response_model=MembershipResponse, status_code=201)

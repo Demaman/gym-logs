@@ -32,7 +32,7 @@ async def test_create_organization_returns_correct_shape(client: AsyncClient) ->
     )
     assert resp.status_code == 201
     data = resp.json()
-    required_keys = {"id", "name", "created_at"}
+    required_keys = {"id", "name", "join_code", "created_at"}
     optional_keys = {"cnpj", "phone", "contact_email", "address_street", "address_city", "address_state", "address_zip", "website"}
     assert required_keys <= set(data.keys())
     assert set(data.keys()) == required_keys | optional_keys
