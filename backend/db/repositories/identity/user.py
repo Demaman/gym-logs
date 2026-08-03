@@ -43,3 +43,16 @@ class UserRepository:
             select(User).where(User.organization_id == organization_id)
         )
         return list(result.scalars().all())
+
+    async def update(self, user: User, **kwargs) -> User:
+        for key, val in kwargs.items():
+            setattr(user, key, val)
+        await self._s.commit()
+        await self._s.refresh(user)
+        return user
+
+    async def get_by_ids(self, user_ids: list[uuid.UUID]) -> list[User]:
+        if not user_ids:
+            return []
+        result = await self._s.execute(select(User).where(User.id.in_(user_ids)))
+        return list(result.scalars().all())

@@ -44,3 +44,35 @@ class MembershipRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def get_by_id(self, membership_id: uuid.UUID) -> Membership | None:
+        result = await self._s.execute(
+            select(Membership).where(Membership.id == membership_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def delete(self, membership: Membership) -> None:
+        await self._s.delete(membership)
+        await self._s.commit()
+
+    async def list_by_trainer(
+        self, trainer_id: uuid.UUID, organization_id: uuid.UUID | None
+    ) -> list[Membership]:
+        stmt = select(Membership).where(Membership.trainer_id == trainer_id)
+        if organization_id is not None:
+            stmt = stmt.where(Membership.organization_id == organization_id)
+        else:
+            stmt = stmt.where(Membership.organization_id.is_(None))
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_athlete(
+        self, athlete_id: uuid.UUID, organization_id: uuid.UUID | None
+    ) -> list[Membership]:
+        stmt = select(Membership).where(Membership.athlete_id == athlete_id)
+        if organization_id is not None:
+            stmt = stmt.where(Membership.organization_id == organization_id)
+        else:
+            stmt = stmt.where(Membership.organization_id.is_(None))
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())

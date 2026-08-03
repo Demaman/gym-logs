@@ -19,6 +19,22 @@ class UserCreate(BaseModel):
         return v
 
 
+class UserUpdate(BaseModel):
+    email: EmailStr | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        return v
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
