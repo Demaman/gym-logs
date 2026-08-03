@@ -1,7 +1,11 @@
+import axios from 'axios'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { acceptInvite, declineInvite, deleteInvite, getMyInvites, inviteMember, listInvites } from '@/lib/api/identity'
+import { acceptInvite, declineInvite, deleteInvite, getMe, getMyInvites, inviteMember, listInvites } from '@/lib/api/identity'
+import { useAuthStore } from '@/lib/auth/store'
 import { useRole } from '@/hooks/use-role'
 import type { InviteRequest } from '@/types/api'
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 export function useInvites() {
   return useQuery({
@@ -42,11 +46,29 @@ export function useMyInvites() {
 
 export function useAcceptInvite() {
   const qc = useQueryClient()
+  const setAuth = useAuthStore((s) => s.setAuth)
+
   return useMutation({
     mutationFn: (id: string) => acceptInvite(id),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Rotate tokens so the new JWT carries the updated organization_id claim.
+      const storedRefresh = sessionStorage.getItem('refresh_token')
+      if (storedRefresh) {
+        try {
+          const { data: tokens } = await axios.post(
+            `${BASE_URL}/api/v1/identity/auth/refresh`,
+            { refresh_token: storedRefresh },
+          )
+          sessionStorage.setItem('refresh_token', tokens.refresh_token)
+          const freshUser = await getMe()
+          setAuth(tokens.access_token, freshUser)
+        } catch {
+          // Stale token is acceptable — next natural expiry will refresh.
+        }
+      }
       qc.invalidateQueries({ queryKey: ['identity', 'invites', 'mine'] })
       qc.invalidateQueries({ queryKey: ['identity', 'memberships'] })
+      qc.invalidateQueries({ queryKey: ['identity', 'organization'] })
     },
   })
 }

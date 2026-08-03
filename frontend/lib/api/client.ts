@@ -54,8 +54,12 @@ api.interceptors.response.use(
         refresh_token: refreshToken,
       })
       const newToken: string = data.access_token
-      useAuthStore.getState().setAuth(newToken, useAuthStore.getState().user!)
       sessionStorage.setItem('refresh_token', data.refresh_token)
+      // Fetch fresh user so store reflects any org/role changes since last login.
+      const { data: freshUser } = await axios.get(`${BASE_URL}/api/v1/identity/users/me`, {
+        headers: { Authorization: `Bearer ${newToken}` },
+      })
+      useAuthStore.getState().setAuth(newToken, freshUser)
       flushQueue(null, newToken)
       req!.headers!.Authorization = `Bearer ${newToken}`
       return api(req!)
