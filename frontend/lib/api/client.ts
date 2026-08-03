@@ -41,7 +41,7 @@ api.interceptors.response.use(
     isRefreshing = true
 
     const refreshToken =
-      typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null
+      typeof window !== 'undefined' ? sessionStorage.getItem('refresh_token') : null
 
     if (!refreshToken) {
       useAuthStore.getState().clearAuth()
@@ -55,14 +55,14 @@ api.interceptors.response.use(
       })
       const newToken: string = data.access_token
       useAuthStore.getState().setAuth(newToken, useAuthStore.getState().user!)
-      localStorage.setItem('refresh_token', data.refresh_token)
+      sessionStorage.setItem('refresh_token', data.refresh_token)
       flushQueue(null, newToken)
       req!.headers!.Authorization = `Bearer ${newToken}`
       return api(req!)
     } catch (err) {
       flushQueue(err, null)
       useAuthStore.getState().clearAuth()
-      localStorage.removeItem('refresh_token')
+      sessionStorage.removeItem('refresh_token')
       if (typeof window !== 'undefined') window.location.href = '/login'
       return Promise.reject(err)
     } finally {

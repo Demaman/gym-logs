@@ -10,45 +10,44 @@ import {
   ClipboardList,
   UserCheck,
   LayoutDashboard,
-  Link2,
   LogOut,
   Settings,
+  Languages,
+  HeartPulse,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/auth/store'
 import { useLogout } from '@/hooks/use-logout'
+import { useI18n } from '@/providers/i18n-provider'
+import { InviteBellBadge } from '@/components/layout/invite-banner'
+import type { Locale } from '@/lib/i18n'
 import type { Role } from '@/hooks/use-role'
 
 // ── Nav items per role ─────────────────────────────────────────────────────────
 
-type NavItem = { href: string; label: string; icon: React.ElementType }
+type NavItem = { href: string; labelKey: keyof ReturnType<typeof useI18n>['t']['nav']; icon: React.ElementType }
 
 const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   athlete: [
-    { href: '/logs',      label: 'My Logs',  icon: Dumbbell       },
-    { href: '/training',  label: 'Training', icon: BookOpen       },
-    { href: '/analytics', label: 'Progress', icon: TrendingUp     },
+    { href: '/logs',      labelKey: 'logs',      icon: Dumbbell       },
+    { href: '/training',  labelKey: 'training',  icon: BookOpen       },
+    { href: '/health',    labelKey: 'health',    icon: HeartPulse     },
+    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp     },
   ],
   trainer: [
-    { href: '/logs',      label: 'Logs',        icon: ClipboardList  },
-    { href: '/athletes',  label: 'My Athletes', icon: Users          },
-    { href: '/training',  label: 'Programs',    icon: BookOpen       },
-    { href: '/analytics', label: 'Analytics',   icon: TrendingUp     },
+    { href: '/logs',      labelKey: 'logs',      icon: ClipboardList  },
+    { href: '/athletes',  labelKey: 'athletes',  icon: Users          },
+    { href: '/training',  labelKey: 'programs',  icon: BookOpen       },
+    { href: '/health',    labelKey: 'health',    icon: HeartPulse     },
+    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp     },
   ],
   gym_admin: [
-    { href: '/overview',  label: 'Overview',  icon: LayoutDashboard },
-    { href: '/trainers',  label: 'Trainers',  icon: UserCheck       },
-    { href: '/athletes',  label: 'Athletes',  icon: Users           },
-    { href: '/training',  label: 'Training',  icon: BookOpen        },
-    { href: '/analytics', label: 'Analytics', icon: TrendingUp      },
-    { href: '/members',   label: 'Members',   icon: Link2           },
+    { href: '/overview',  labelKey: 'overview',  icon: LayoutDashboard },
+    { href: '/trainers',  labelKey: 'trainers',  icon: UserCheck       },
+    { href: '/athletes',  labelKey: 'athletes',  icon: Users           },
+    { href: '/training',  labelKey: 'training',  icon: BookOpen        },
+    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp      },
   ],
-}
-
-const ROLE_LABEL: Record<Role, string> = {
-  athlete:   'Athlete',
-  trainer:   'Trainer',
-  gym_admin: 'Gym Admin',
 }
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
@@ -68,16 +67,40 @@ function Avatar({ email, size = 'md' }: { email: string; size?: 'sm' | 'md' }) {
   )
 }
 
+// ── Language switcher ─────────────────────────────────────────────────────────
+
+function LanguageSwitcher() {
+  const { locale, setLocale, t } = useI18n()
+
+  function toggle() {
+    const next: Locale = locale === 'en' ? 'pt-BR' : 'en'
+    setLocale(next)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={t.language.label}
+      className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+    >
+      <Languages className="size-4 shrink-0" aria-hidden />
+      <span className="flex-1 text-left">{locale === 'en' ? t.language.en : t.language.ptBR}</span>
+    </button>
+  )
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
   const pathname = usePathname()
   const user = useAuthStore((s) => s.user)
   const { mutate: logout, isPending: isLoggingOut } = useLogout()
+  const { t } = useI18n()
 
   const displayName = user?.email.split('@')[0] ?? 'User'
   const role        = (user?.role ?? 'athlete') as Role
-  const roleLabel   = ROLE_LABEL[role] ?? 'Member'
+  const roleLabel   = t.roles[role] ?? t.roles.athlete
   const email       = user?.email ?? 'user@example.com'
   const navItems    = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.athlete
 
@@ -97,11 +120,12 @@ export function Sidebar() {
       {/* ── Navigation ───────────────────────────────────────────────── */}
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-          Menu
+          {t.nav.menu}
         </p>
 
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.map(({ href, labelKey, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
+          const label = t.nav[labelKey]
           return (
             <Link
               key={href}
@@ -132,12 +156,14 @@ export function Sidebar() {
         {/* ── Divider + secondary actions ───────────────────────────── */}
         <div className="mt-auto pt-4">
           <div className="mb-1 h-px bg-border" />
+          <LanguageSwitcher />
           <Link
             href="/settings"
             className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
           >
             <Settings className="size-4 shrink-0" aria-hidden />
-            Settings
+            {t.nav.settings}
+            <InviteBellBadge />
           </Link>
         </div>
       </nav>

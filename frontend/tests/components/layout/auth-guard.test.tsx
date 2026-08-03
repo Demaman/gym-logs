@@ -48,7 +48,7 @@ async function getIsTokenExpired() {
 describe('AuthGuard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    localStorage.clear()
+    sessionStorage.clear()
     useAuthStore.setState({ user: null, accessToken: null })
   })
 
@@ -70,7 +70,7 @@ describe('AuthGuard', () => {
   })
 
   it('shows a spinner while refreshing', async () => {
-    localStorage.setItem('refresh_token', 'rt-abc')
+    sessionStorage.setItem('refresh_token', 'rt-abc')
     const api = await getApi()
     // Keep the refresh pending indefinitely
     vi.mocked(api.post).mockReturnValue(new Promise(() => {}))
@@ -80,7 +80,7 @@ describe('AuthGuard', () => {
   })
 
   it('renders children after a successful token refresh', async () => {
-    localStorage.setItem('refresh_token', 'rt-abc')
+    sessionStorage.setItem('refresh_token', 'rt-abc')
     const api = await getApi()
     const me = await getMe()
 
@@ -95,7 +95,7 @@ describe('AuthGuard', () => {
   })
 
   it('stores the new access token and user in the auth store after refresh', async () => {
-    localStorage.setItem('refresh_token', 'rt-abc')
+    sessionStorage.setItem('refresh_token', 'rt-abc')
     const api = await getApi()
     const me = await getMe()
 
@@ -112,7 +112,7 @@ describe('AuthGuard', () => {
   })
 
   it('redirects to /login when refresh fails', async () => {
-    localStorage.setItem('refresh_token', 'rt-expired')
+    sessionStorage.setItem('refresh_token', 'rt-expired')
     const api = await getApi()
     vi.mocked(api.post).mockRejectedValue(new Error('401'))
 
@@ -121,20 +121,20 @@ describe('AuthGuard', () => {
     expect(screen.queryByText('protected')).not.toBeInTheDocument()
   })
 
-  it('removes stale refresh token from localStorage when refresh fails', async () => {
-    localStorage.setItem('refresh_token', 'rt-expired')
+  it('removes stale refresh token from sessionStorage when refresh fails', async () => {
+    sessionStorage.setItem('refresh_token', 'rt-expired')
     const api = await getApi()
     vi.mocked(api.post).mockRejectedValue(new Error('401'))
 
     render(<AuthGuard><span>protected</span></AuthGuard>)
-    await waitFor(() => expect(localStorage.getItem('refresh_token')).toBeNull())
+    await waitFor(() => expect(sessionStorage.getItem('refresh_token')).toBeNull())
   })
 
   it('triggers refresh when user exists but token is expired', async () => {
     const { isTokenExpired } = await import('@/lib/auth/token')
     vi.mocked(isTokenExpired).mockReturnValue(true)
 
-    localStorage.setItem('refresh_token', 'rt-abc')
+    sessionStorage.setItem('refresh_token', 'rt-abc')
     useAuthStore.setState({ user: MOCK_USER, accessToken: 'expired-token' })
 
     const api = await getApi()

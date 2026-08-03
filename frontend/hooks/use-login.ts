@@ -19,7 +19,7 @@ export function useLogin() {
   return useMutation<void, AxiosError<ApiError>, LoginInput>({
     mutationFn: async ({ email, password }) => {
       const tokens = await loginApi(email, password)
-      localStorage.setItem('refresh_token', tokens.refresh_token)
+      sessionStorage.setItem('refresh_token', tokens.refresh_token)
       const user = await meApi(tokens.access_token)
       setAuth(tokens.access_token, user)
     },

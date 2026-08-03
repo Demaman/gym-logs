@@ -29,7 +29,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     }
 
     // Token expired or missing — attempt silent refresh
-    const refreshToken = localStorage.getItem('refresh_token')
+    const refreshToken = sessionStorage.getItem('refresh_token')
     if (!refreshToken) {
       setStatus('redirecting')
       router.replace('/login')
@@ -46,14 +46,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
       .then(async ({ data }) => {
         const newAccessToken = data.access_token
         if (data.refresh_token) {
-          localStorage.setItem('refresh_token', data.refresh_token)
+          sessionStorage.setItem('refresh_token', data.refresh_token)
         }
         const userData = await me(newAccessToken)
         setAuth(newAccessToken, userData)
         setStatus('ready')
       })
       .catch(() => {
-        localStorage.removeItem('refresh_token')
+        sessionStorage.removeItem('refresh_token')
         setStatus('redirecting')
         router.replace('/login')
       })

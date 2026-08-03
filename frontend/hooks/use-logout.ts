@@ -12,14 +12,14 @@ export function useLogout() {
   return useMutation({
     mutationFn: async () => {
       const refreshToken =
-        typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null
+        typeof window !== 'undefined' ? sessionStorage.getItem('refresh_token') : null
       if (refreshToken) {
         // best-effort: revoke on the server so the refresh token can't be reused
         await logoutApi(refreshToken).catch(() => undefined)
       }
     },
     onSettled: () => {
-      if (typeof window !== 'undefined') localStorage.removeItem('refresh_token')
+      if (typeof window !== 'undefined') sessionStorage.removeItem('refresh_token')
       clearAuth()
       router.replace('/login')
     },

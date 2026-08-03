@@ -35,7 +35,7 @@ const MOCK_USER: User = {
 }
 
 function seedAuthState() {
-  localStorage.setItem('refresh_token', 'rt-abc123')
+  sessionStorage.setItem('refresh_token', 'rt-abc123')
   useAuthStore.setState({ accessToken: 'at-xyz', user: MOCK_USER })
 }
 
@@ -44,7 +44,7 @@ function seedAuthState() {
 describe('useLogout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    localStorage.clear()
+    sessionStorage.clear()
     useAuthStore.setState({ accessToken: null, user: null })
     seedAuthState()
   })
@@ -71,11 +71,11 @@ describe('useLogout', () => {
     await waitFor(() => expect(useAuthStore.getState().user).toBeNull())
   })
 
-  it('removes refresh_token from localStorage', async () => {
+  it('removes refresh_token from sessionStorage', async () => {
     const { result } = renderHook(() => useLogout(), { wrapper })
 
     await act(async () => { result.current.mutate() })
-    await waitFor(() => expect(localStorage.getItem('refresh_token')).toBeNull())
+    await waitFor(() => expect(sessionStorage.getItem('refresh_token')).toBeNull())
   })
 
   it('redirects to /login', async () => {
@@ -95,13 +95,13 @@ describe('useLogout', () => {
     await waitFor(() => {
       expect(useAuthStore.getState().accessToken).toBeNull()
       expect(useAuthStore.getState().user).toBeNull()
-      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(sessionStorage.getItem('refresh_token')).toBeNull()
       expect(mockReplace).toHaveBeenCalledWith('/login')
     })
   })
 
   it('does not call the API when no refresh token is stored', async () => {
-    localStorage.removeItem('refresh_token')
+    sessionStorage.removeItem('refresh_token')
     const { logout } = await import('@/lib/api/auth')
 
     const { result } = renderHook(() => useLogout(), { wrapper })

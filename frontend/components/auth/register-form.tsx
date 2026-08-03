@@ -21,12 +21,14 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { useRegister } from '@/hooks/use-register'
-import type { ApiError } from '@/types/api'
+import { register as registerApi } from '@/lib/api/auth'
+import { createOrganization } from '@/lib/api/identity'
+import type { ApiError, User } from '@/types/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Role = 'athlete' | 'trainer' | 'gym_admin'
+type OrgMode = 'none' | 'create' | 'join'
 type Step = 1 | 2
 
 interface RoleOption {
@@ -61,33 +63,42 @@ const ROLES: RoleOption[] = [
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// ── Schema ────────────────────────────────────────────────────────────────────
 
-const accountSchema = z
+const schema = z
   .object({
     email:            z.string().email('Enter a valid email address'),
     password:         z.string().min(8, 'Must be at least 8 characters'),
     confirm_password: z.string().min(1, 'Please confirm your password'),
     organization_id:  z.string().optional(),
+    org_name:         z.string().optional(),
+    cnpj:             z.string().optional(),
+    phone:            z.string().optional(),
+    contact_email:    z.string().optional(),
+    address_street:   z.string().optional(),
+    address_city:     z.string().optional(),
+    address_state:    z.string().optional(),
+    address_zip:      z.string().optional(),
+    website:          z.string().optional(),
   })
   .refine((d) => d.password === d.confirm_password, {
     message: 'Passwords do not match',
     path: ['confirm_password'],
   })
 
-type AccountInput = z.infer<typeof accountSchema>
+type FormInput = z.infer<typeof schema>
 
-// ── Error helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getErrorMessage(error: AxiosError<ApiError> | null): string | null {
-  if (!error) return null
-  if (error.response?.status === 409) return 'An account with this email already exists.'
-  if (error.response?.status === 422) return 'Please check your details and try again.'
-  if (!error.response) return 'Unable to connect. Check your internet connection and try again.'
+function getErrorMessage(error: AxiosError<ApiError> | unknown): string | null {
+  const err = error as AxiosError<ApiError>
+  if (!err?.response) return 'Unable to connect. Check your internet connection and try again.'
+  if (err.response.status === 409) return 'An account with this email already exists.'
+  if (err.response.status === 422) return 'Please check your details and try again.'
   return 'Something went wrong. Please try again.'
 }
 
-// ── Step indicator ────────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function StepIndicator({ step }: { step: Step }) {
   return (
@@ -107,17 +118,7 @@ function StepIndicator({ step }: { step: Step }) {
   )
 }
 
-// ── Role card ─────────────────────────────────────────────────────────────────
-
-function RoleCard({
-  option,
-  selected,
-  onSelect,
-}: {
-  option: RoleOption
-  selected: boolean
-  onSelect: () => void
-}) {
+function RoleCard({ option, selected, onSelect }: { option: RoleOption; selected: boolean; onSelect: () => void }) {
   const Icon = option.icon
   return (
     <button
@@ -132,21 +133,12 @@ function RoleCard({
         selected ? 'border-primary bg-accent/40 shadow-sm' : 'border-border bg-card',
       )}
     >
-      <span
-        className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
-          selected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground',
-        )}
-      >
+      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors', selected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground')}>
         <Icon className="size-4" aria-hidden />
       </span>
       <span className="flex flex-col gap-0.5 pt-0.5">
-        <span className={cn('text-sm font-semibold', selected && 'text-primary')}>
-          {option.label}
-        </span>
-        <span className="text-xs text-muted-foreground leading-relaxed">
-          {option.description}
-        </span>
+        <span className={cn('text-sm font-semibold', selected && 'text-primary')}>{option.label}</span>
+        <span className="text-xs text-muted-foreground leading-relaxed">{option.description}</span>
       </span>
       {selected && (
         <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary">
@@ -157,49 +149,148 @@ function RoleCard({
   )
 }
 
-// ── Password input with show/hide toggle ──────────────────────────────────────
-
-function PasswordInput({
-  value,
-  onChange,
-  onBlur,
-  name,
-  autoComplete,
-  placeholder = '••••••••',
-  enterKeyHint,
-}: {
-  value: string
-  onChange: React.ChangeEventHandler<HTMLInputElement>
-  onBlur?: React.FocusEventHandler<HTMLInputElement>
-  name: string
-  autoComplete: string
-  placeholder?: string
-  enterKeyHint?: React.InputHTMLAttributes<HTMLInputElement>['enterKeyHint']
+function PasswordInput({ value, onChange, onBlur, name, autoComplete, placeholder = '••••••••', enterKeyHint }: {
+  value: string; onChange: React.ChangeEventHandler<HTMLInputElement>; onBlur?: React.FocusEventHandler<HTMLInputElement>
+  name: string; autoComplete: string; placeholder?: string; enterKeyHint?: React.InputHTMLAttributes<HTMLInputElement>['enterKeyHint']
 }) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
-      <Input
-        name={name}
-        value={value}
-        onChange={onChange}
-        onBlur={onBlur}
-        type={show ? 'text' : 'password'}
-        autoComplete={autoComplete}
-        placeholder={placeholder}
-        enterKeyHint={enterKeyHint}
-        required
-        className="pr-10"
-      />
-      <button
-        type="button"
-        onClick={() => setShow((v) => !v)}
-        aria-label={show ? 'Hide password' : 'Show password'}
-        tabIndex={-1}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-      >
+      <Input name={name} value={value} onChange={onChange} onBlur={onBlur} type={show ? 'text' : 'password'} autoComplete={autoComplete} placeholder={placeholder} enterKeyHint={enterKeyHint} required className="pr-10" />
+      <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? 'Hide password' : 'Show password'} tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground">
         {show ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
       </button>
+    </div>
+  )
+}
+
+// ── Org creation form fields ──────────────────────────────────────────────────
+
+function OrgFields({ form, required }: { form: ReturnType<typeof useForm<FormInput>>; required: boolean }) {
+  return (
+    <div className="space-y-4">
+      <FormField
+        control={form.control}
+        name="org_name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              Organization name{required && <span className="text-destructive" aria-hidden> *</span>}
+            </FormLabel>
+            <FormControl>
+              <Input {...field} placeholder="e.g. Iron Works Gym" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormField
+          control={form.control}
+          name="cnpj"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>CNPJ</FormLabel>
+              <FormControl>
+                <Input {...field} placeholder="00.000.000/0001-00" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="phone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Phone</FormLabel>
+              <FormControl>
+                <Input {...field} type="tel" placeholder="+55 11 9 0000-0000" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="contact_email"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Contact email</FormLabel>
+            <FormControl>
+              <Input {...field} type="email" placeholder="contact@mygym.com" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="address_street"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Address</FormLabel>
+            <FormControl>
+              <Input {...field} placeholder="Rua das Flores, 123" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="grid grid-cols-3 gap-3">
+        <FormField
+          control={form.control}
+          name="address_city"
+          render={({ field }) => (
+            <FormItem className="col-span-1">
+              <FormLabel>City</FormLabel>
+              <FormControl><Input {...field} placeholder="São Paulo" /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="address_state"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>State</FormLabel>
+              <FormControl><Input {...field} placeholder="SP" maxLength={2} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="address_zip"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>CEP</FormLabel>
+              <FormControl><Input {...field} placeholder="01310-100" /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="website"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Website</FormLabel>
+            <FormControl>
+              <Input {...field} type="url" placeholder="https://mygym.com" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   )
 }
@@ -209,32 +300,73 @@ function PasswordInput({
 export function RegisterForm() {
   const [step, setStep] = useState<Step>(1)
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
-  const [hasOrg, setHasOrg] = useState(false)
+  const [orgMode, setOrgMode] = useState<OrgMode>('none')
 
-  const { mutate: doRegister, isPending, error, isSuccess, data: registeredUser } = useRegister()
-  const errorMessage = getErrorMessage(error as AxiosError<ApiError> | null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSuccess, setIsSuccess] = useState(false)
+  const [registeredUser, setRegisteredUser] = useState<User | null>(null)
 
-  const form = useForm<AccountInput>({
-    resolver: zodResolver(accountSchema),
-    defaultValues: { email: '', password: '', confirm_password: '', organization_id: '' },
+  const form = useForm<FormInput>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      email: '', password: '', confirm_password: '', organization_id: '',
+      org_name: '', cnpj: '', phone: '', contact_email: '',
+      address_street: '', address_city: '', address_state: '', address_zip: '', website: '',
+    },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
 
-  // Re-validate confirm_password whenever password changes so the match error stays live
-  const password = form.watch('password')
+  const shouldCreateOrg = selectedRole === 'gym_admin' || (selectedRole === 'trainer' && orgMode === 'create')
 
-  function onSubmit(values: AccountInput) {
+  async function onSubmit(values: FormInput) {
     if (!selectedRole) return
-    doRegister({
-      email: values.email,
-      password: values.password,
-      role: selectedRole,
-      organization_id: hasOrg && values.organization_id ? values.organization_id : undefined,
-    })
+
+    if (shouldCreateOrg && !values.org_name?.trim()) {
+      form.setError('org_name', { message: 'Organization name is required' })
+      return
+    }
+
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      let orgId: string | undefined
+
+      if (shouldCreateOrg) {
+        const org = await createOrganization({
+          name: values.org_name!.trim(),
+          cnpj: values.cnpj || null,
+          phone: values.phone || null,
+          contact_email: values.contact_email || null,
+          address_street: values.address_street || null,
+          address_city: values.address_city || null,
+          address_state: values.address_state || null,
+          address_zip: values.address_zip || null,
+          website: values.website || null,
+        })
+        orgId = String(org.id)
+      } else if (orgMode === 'join' && values.organization_id) {
+        orgId = values.organization_id
+      }
+
+      const user = await registerApi({
+        email: values.email,
+        password: values.password,
+        role: selectedRole,
+        organization_id: orgId,
+      })
+      setRegisteredUser(user)
+      setIsSuccess(true)
+    } catch (err) {
+      setSubmitError(getErrorMessage(err))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  // ── Success state ─────────────────────────────────────────────────────────
+  // ── Success ───────────────────────────────────────────────────────────────
 
   if (isSuccess) {
     return (
@@ -269,12 +401,7 @@ export function RegisterForm() {
         </div>
         <div className="flex flex-col gap-3" role="radiogroup" aria-label="Select your role">
           {ROLES.map((opt) => (
-            <RoleCard
-              key={opt.role}
-              option={opt}
-              selected={selectedRole === opt.role}
-              onSelect={() => setSelectedRole(opt.role)}
-            />
+            <RoleCard key={opt.role} option={opt} selected={selectedRole === opt.role} onSelect={() => setSelectedRole(opt.role)} />
           ))}
         </div>
         <Button className="w-full" disabled={!selectedRole} onClick={() => setStep(2)}>
@@ -282,15 +409,13 @@ export function RegisterForm() {
         </Button>
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:opacity-80 transition-opacity">
-            Sign in
-          </Link>
+          <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:opacity-80 transition-opacity">Sign in</Link>
         </p>
       </div>
     )
   }
 
-  // ── Step 2: Account details ───────────────────────────────────────────────
+  // ── Step 2: Account + org details ─────────────────────────────────────────
 
   return (
     <Form {...form}>
@@ -301,144 +426,163 @@ export function RegisterForm() {
           <h1 className="text-2xl font-bold tracking-tight">Create your account</h1>
           <p className="text-sm text-muted-foreground">
             Signing up as{' '}
-            <span className="font-medium text-foreground">
-              {ROLES.find((r) => r.role === selectedRole)?.label}
-            </span>
+            <span className="font-medium text-foreground">{ROLES.find((r) => r.role === selectedRole)?.label}</span>
           </p>
         </div>
 
-        {errorMessage && (
+        {submitError && (
           <Alert variant="destructive">
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>{submitError}</AlertDescription>
           </Alert>
         )}
 
         {/* Email */}
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email <span className="text-destructive" aria-hidden>*</span></FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  type="email"
-                  autoFocus
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  required
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <FormField control={form.control} name="email" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email <span className="text-destructive" aria-hidden>*</span></FormLabel>
+            <FormControl>
+              <Input {...field} type="email" autoFocus autoComplete="email" placeholder="you@example.com" required />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
 
         {/* Password */}
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Password <span className="text-destructive" aria-hidden>*</span></FormLabel>
-              <FormControl>
-                <PasswordInput
-                  {...field}
-                  autoComplete="new-password"
-                  enterKeyHint="next"
-                  // Re-validate confirm field live when password changes
-                  onChange={(e) => {
-                    field.onChange(e)
-                    if (form.getValues('confirm_password')) {
-                      form.trigger('confirm_password')
-                    }
-                  }}
-                />
-              </FormControl>
-              <FormDescription>Must be at least 8 characters</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <FormField control={form.control} name="password" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Password <span className="text-destructive" aria-hidden>*</span></FormLabel>
+            <FormControl>
+              <PasswordInput {...field} autoComplete="new-password" enterKeyHint="next"
+                onChange={(e) => { field.onChange(e); if (form.getValues('confirm_password')) form.trigger('confirm_password') }}
+              />
+            </FormControl>
+            <FormDescription>Must be at least 8 characters</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )} />
 
         {/* Confirm password */}
-        <FormField
-          control={form.control}
-          name="confirm_password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Confirm password <span className="text-destructive" aria-hidden>*</span></FormLabel>
-              <FormControl>
-                <PasswordInput
-                  {...field}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  enterKeyHint={hasOrg ? 'next' : 'go'}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <FormField control={form.control} name="confirm_password" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Confirm password <span className="text-destructive" aria-hidden>*</span></FormLabel>
+            <FormControl>
+              <PasswordInput {...field} autoComplete="new-password" placeholder="••••••••" enterKeyHint="go" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
 
-        {/* Organization toggle + field */}
-        <div className="space-y-3">
-          <label className="flex cursor-pointer items-center gap-3 select-none">
-            <input
-              type="checkbox"
-              checked={hasOrg}
-              onChange={(e) => {
-                setHasOrg(e.target.checked)
-                if (!e.target.checked) form.setValue('organization_id', '')
-              }}
-              className="h-4 w-4 rounded border-border accent-primary"
-            />
-            <span className="text-sm font-medium text-foreground">I have an organization code</span>
-          </label>
+        {/* ── gym_admin: always creates an org ─── */}
+        {selectedRole === 'gym_admin' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your organization</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <p className="text-xs text-muted-foreground">Only the name is required. All other fields are optional.</p>
+            <OrgFields form={form} required />
+          </div>
+        )}
 
-          {hasOrg && (
-            <FormField
-              control={form.control}
-              name="organization_id"
-              render={({ field }) => (
+        {/* ── trainer: pick org mode ─── */}
+        {selectedRole === 'trainer' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Organization</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <div className="flex flex-col gap-2">
+              {([
+                { mode: 'none' as OrgMode,   label: 'I work independently' },
+                { mode: 'create' as OrgMode, label: 'Create my organization' },
+                { mode: 'join' as OrgMode,   label: 'Join an existing gym' },
+              ]).map(({ mode, label }) => (
+                <label key={mode} className="flex cursor-pointer items-center gap-3 select-none">
+                  <input
+                    type="radio"
+                    name="orgMode"
+                    checked={orgMode === mode}
+                    onChange={() => setOrgMode(mode)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="text-sm font-medium">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {orgMode === 'create' && (
+              <div className="space-y-4 pt-1">
+                <p className="text-xs text-muted-foreground">Only the name is required. All other fields are optional.</p>
+                <OrgFields form={form} required />
+              </div>
+            )}
+
+            {orgMode === 'join' && (
+              <FormField control={form.control} name="organization_id" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Organization ID</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      autoFocus
-                      placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
-                      spellCheck={false}
+                    <Input {...field} autoFocus placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" spellCheck={false}
                       onChange={(e) => {
                         field.onChange(e)
                         const v = e.target.value
-                        if (v && !UUID_RE.test(v)) {
-                          form.setError('organization_id', {
-                            message: "Check with your gym admin — that doesn't look like a valid ID",
-                          })
-                        } else {
-                          form.clearErrors('organization_id')
-                        }
+                        if (v && !UUID_RE.test(v)) form.setError('organization_id', { message: "That doesn't look like a valid ID" })
+                        else form.clearErrors('organization_id')
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>Get this from your gym administrator</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+          </div>
+        )}
+
+        {/* ── athlete: optionally join an org ─── */}
+        {selectedRole === 'athlete' && (
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center gap-3 select-none">
+              <input
+                type="checkbox"
+                checked={orgMode === 'join'}
+                onChange={(e) => {
+                  setOrgMode(e.target.checked ? 'join' : 'none')
+                  if (!e.target.checked) form.setValue('organization_id', '')
+                }}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+              <span className="text-sm font-medium text-foreground">I belong to a gym</span>
+            </label>
+
+            {orgMode === 'join' && (
+              <FormField control={form.control} name="organization_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Organization ID</FormLabel>
+                  <FormControl>
+                    <Input {...field} autoFocus placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" spellCheck={false}
+                      onChange={(e) => {
+                        field.onChange(e)
+                        const v = e.target.value
+                        if (v && !UUID_RE.test(v)) form.setError('organization_id', { message: "Check with your gym admin — that doesn't look like a valid ID" })
+                        else form.clearErrors('organization_id')
                       }}
                     />
                   </FormControl>
                   <FormDescription>Get this code from your gym administrator</FormDescription>
                   <FormMessage />
                 </FormItem>
-              )}
-            />
-          )}
-        </div>
+              )} />
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col gap-3 pt-1">
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isPending || (form.formState.isSubmitted && !form.formState.isValid)}
-          >
-            {isPending ? (
+          <Button type="submit" className="w-full" disabled={isSubmitting || (form.formState.isSubmitted && !form.formState.isValid)}>
+            {isSubmitting ? (
               <><Loader2 className="animate-spin" aria-hidden />Creating account…</>
             ) : (
               'Create account'
@@ -451,9 +595,7 @@ export function RegisterForm() {
 
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:opacity-80 transition-opacity">
-            Sign in
-          </Link>
+          <Link href="/login" className="font-medium text-primary underline underline-offset-4 hover:opacity-80 transition-opacity">Sign in</Link>
         </p>
       </form>
     </Form>

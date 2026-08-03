@@ -6,6 +6,53 @@ export interface User {
   created_at: string
 }
 
+export interface Organization {
+  id: string
+  name: string
+  cnpj: string | null
+  phone: string | null
+  contact_email: string | null
+  address_street: string | null
+  address_city: string | null
+  address_state: string | null
+  address_zip: string | null
+  website: string | null
+  created_at: string
+}
+
+export interface OrganizationCreateRequest {
+  name: string
+  cnpj?: string | null
+  phone?: string | null
+  contact_email?: string | null
+  address_street?: string | null
+  address_city?: string | null
+  address_state?: string | null
+  address_zip?: string | null
+  website?: string | null
+}
+
+export interface OrganizationUpdateRequest {
+  name?: string | null
+  cnpj?: string | null
+  phone?: string | null
+  contact_email?: string | null
+  address_street?: string | null
+  address_city?: string | null
+  address_state?: string | null
+  address_zip?: string | null
+  website?: string | null
+}
+
+export interface UserUpdateRequest {
+  email?: string
+}
+
+export interface PasswordChangeRequest {
+  current_password: string
+  new_password: string
+}
+
 export interface TokenResponse {
   access_token: string
   refresh_token: string
@@ -17,6 +64,33 @@ export interface RegisterRequest {
   password: string
   role: 'athlete' | 'trainer' | 'gym_admin'
   organization_id?: string
+}
+
+export interface MembershipEnriched {
+  id: string
+  organization_id: string | null
+  trainer_id: string
+  trainer_email: string
+  athlete_id: string
+  athlete_email: string
+  created_at: string
+}
+
+export interface Invite {
+  id: string
+  organization_id: string
+  organization_name: string | null
+  email: string
+  role: string
+  expires_at: string
+  accepted_at: string | null
+  created_at: string
+}
+
+export interface InviteRequest {
+  email: string
+  role: string
+  pre_filled_data?: Record<string, unknown> | null
 }
 
 export interface ApiError {
@@ -43,6 +117,7 @@ export type MovementPattern =
 
 export type DayTag =
   | 'push' | 'pull' | 'legs' | 'upper' | 'lower' | 'full_body' | 'cardio' | 'custom'
+  | 'chest' | 'back' | 'shoulders' | 'arms' | 'glutes' | 'core'
 
 export type SessionMode = 'on_the_fly' | 'program_driven'
 
@@ -122,6 +197,14 @@ export interface LoggedSet {
   recorded_at: string
 }
 
+export interface PrescribedSetTarget {
+  set_type: SetType
+  rep_min: number
+  rep_max: number
+  rpe_target: number | null
+  rest_seconds: number | null
+}
+
 export interface LoggedExercise {
   id: string
   session_id: string
@@ -130,6 +213,7 @@ export interface LoggedExercise {
   position: number
   notes: string | null
   logged_sets: LoggedSet[]
+  prescribed_sets: PrescribedSetTarget[]
 }
 
 export interface ExerciseAverage {
@@ -185,11 +269,55 @@ export interface CreateExerciseRequest {
   notes?: string
 }
 
+// ── Training request types ────────────────────────────────────────────────────
+
+export interface UpdateProgramRequest {
+  name?: string
+  description?: string
+}
+
+export interface CreateProgramDayRequest {
+  name: string
+  position: number
+  day_tag: DayTag
+}
+
+export interface UpdateProgramDayRequest {
+  name?: string
+  day_tag?: DayTag
+  position?: number
+}
+
+export interface AddExerciseToDayRequest {
+  exercise_id: string
+  position: number
+  notes?: string
+}
+
+export interface AddPrescribedSetRequest {
+  position: number
+  set_type?: SetType
+  rep_min?: number
+  rep_max?: number
+  rpe_target?: number | null
+  rest_seconds?: number | null
+  weight_pct_1rm?: number | null
+  notes?: string | null
+}
+
+// ── Log request types ─────────────────────────────────────────────────────────
+
 export interface CreateSessionRequest {
   mode: SessionMode
   program_day_id?: string
   name?: string
   day_tag?: DayTag
+}
+
+export interface UpdateSessionRequest {
+  name?: string
+  day_tag?: DayTag
+  program_day_id?: string | null
 }
 
 export interface FinishSessionRequest {
@@ -222,4 +350,124 @@ export interface PaginatedResponse<T> {
   total: number
   limit: number
   offset: number
+}
+
+// ── Analytics / Anamnesis types ───────────────────────────────────────────────
+
+export type SexType = 'male' | 'female' | 'other'
+export type DominantSide = 'left' | 'right'
+export type CompetitionLevel = 'recreational' | 'amateur' | 'competitive' | 'elite'
+export type GoalType = 'strength' | 'hypertrophy' | 'fat_loss' | 'endurance' | 'sport_performance' | 'general_fitness'
+export type BfMethod = 'dexa' | 'skinfold' | 'bioimpedance' | 'navy_formula' | 'visual'
+
+export interface AthleteProfile {
+  id: string
+  user_id: string
+  organization_id: string | null
+  date_of_birth: string | null
+  sex: SexType | null
+  dominant_side: DominantSide | null
+  height_cm: number | null
+  training_age_years: number | null
+  training_frequency_available: number | null
+  primary_sport: string | null
+  competition_level: CompetitionLevel | null
+  primary_goal: GoalType | null
+  target_event_date: string | null
+  parq_cleared: boolean
+  injury_history: string | null
+  surgeries: string | null
+  chronic_conditions: string | null
+  medications: string | null
+  contraindications: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BodyMeasurement {
+  id: string
+  user_id: string
+  measured_at: string
+  weight_kg: number | null
+  body_fat_pct: number | null
+  lean_mass_kg: number | null
+  bf_method: BfMethod | null
+  waist_cm: number | null
+  hip_cm: number | null
+  chest_cm: number | null
+  upper_arm_cm: number | null
+  thigh_cm: number | null
+  calf_cm: number | null
+  resting_hr: number | null
+  bp_systolic: number | null
+  bp_diastolic: number | null
+  notes: string | null
+  created_at: string
+}
+
+export interface AthleteProfileUpdateRequest {
+  date_of_birth?: string | null
+  sex?: SexType | null
+  dominant_side?: DominantSide | null
+  height_cm?: number | null
+  training_age_years?: number | null
+  training_frequency_available?: number | null
+  primary_sport?: string | null
+  competition_level?: CompetitionLevel | null
+  primary_goal?: GoalType | null
+  target_event_date?: string | null
+  parq_cleared?: boolean | null
+  injury_history?: string | null
+  surgeries?: string | null
+  chronic_conditions?: string | null
+  medications?: string | null
+  contraindications?: string | null
+}
+
+export interface BodyMeasurementCreateRequest {
+  measured_at: string
+  weight_kg?: number | null
+  body_fat_pct?: number | null
+  lean_mass_kg?: number | null
+  bf_method?: BfMethod | null
+  waist_cm?: number | null
+  hip_cm?: number | null
+  chest_cm?: number | null
+  upper_arm_cm?: number | null
+  thigh_cm?: number | null
+  calf_cm?: number | null
+  resting_hr?: number | null
+  bp_systolic?: number | null
+  bp_diastolic?: number | null
+  notes?: string | null
+}
+
+// ── Progress / analytics types ────────────────────────────────────────────────
+
+export interface ProgressStats {
+  total_sessions: number
+  total_volume_kg: number
+  sessions_this_month: number
+  avg_volume_per_session: number
+}
+
+export interface WeeklyVolumePoint {
+  week_start: string
+  volume_kg: number
+}
+
+export interface WeeklyVolumeSeries {
+  points: WeeklyVolumePoint[]
+}
+
+export interface ExerciseHistoryPoint {
+  session_date: string
+  session_name: string
+  best_weight_kg: number | null
+  volume_kg: number
+}
+
+export interface ExerciseHistorySeries {
+  exercise_name: string | null
+  points: ExerciseHistoryPoint[]
 }
