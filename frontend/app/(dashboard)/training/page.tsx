@@ -24,7 +24,7 @@ import { useRole } from '@/hooks/use-role'
 import { useAuthStore } from '@/lib/auth/store'
 import { useI18n } from '@/providers/i18n-provider'
 import { useQueryClient } from '@tanstack/react-query'
-import { usePrograms, useCreateProgram, useDeleteProgram, useAddDay, useDeleteDay, useDeleteProgramExercise } from '@/hooks/training/use-programs'
+import { usePrograms, useCreateProgram, useAssignProgram, useDeleteProgram, useAddDay, useDeleteDay, useDeleteProgramExercise } from '@/hooks/training/use-programs'
 import { addExerciseToDay, addPrescribedSet, replacePrescribedSets } from '@/lib/api/training'
 import { useStartSession } from '@/hooks/logs/use-start-session'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
@@ -642,6 +642,297 @@ function DayBlock({
   )
 }
 
+// ── Client row (left panel) ───────────────────────────────────────────────────
+
+interface ClientRowProps {
+  athlete: MembershipEnriched
+  programCount: number
+  selected: boolean
+  onSelect: () => void
+}
+
+function ClientRow({ athlete, programCount, selected, onSelect }: ClientRowProps) {
+  const initials = athlete.athlete_email.slice(0, 2).toUpperCase()
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/50',
+        selected && 'bg-accent',
+      )}
+    >
+      {selected && (
+        <span
+          className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
+          aria-hidden
+        />
+      )}
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+        {initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={cn('truncate text-sm font-medium', selected ? 'text-primary' : 'text-foreground')}>
+          {athlete.athlete_email}
+        </p>
+        <p className="text-[10px] text-muted-foreground">
+          {programCount} program{programCount !== 1 ? 's' : ''}
+        </p>
+      </div>
+    </button>
+  )
+}
+
+// ── Assigned program card (in athlete view) ───────────────────────────────────
+
+interface AssignedProgramCardProps {
+  program: Program
+  onSelect: () => void
+  onRemove: () => void
+  isRemoving: boolean
+}
+
+function AssignedProgramCard({ program, onSelect, onRemove, isRemoving }: AssignedProgramCardProps) {
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const dayCount = program.days.length
+  const exCount = totalExercises(program)
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex min-w-0 flex-1 flex-col items-start text-left"
+        >
+          <p className="text-sm font-semibold text-foreground">{program.name}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {dayCount} day{dayCount !== 1 ? 's' : ''} · {exCount} exercise{exCount !== 1 ? 's' : ''}
+          </p>
+        </button>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <button
+          type="button"
+          aria-label={`Remove ${program.name}`}
+          onClick={() => setConfirmRemove(true)}
+          className="shrink-0 rounded-full bg-destructive/10 p-1.5 text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      </div>
+      {confirmRemove && (
+        <div className="mx-4 mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium text-foreground">Remove &ldquo;{program.name}&rdquo;?</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            This will permanently remove this program for the athlete.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setConfirmRemove(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isRemoving}
+              onClick={() => { onRemove(); setConfirmRemove(false) }}
+            >
+              {isRemoving && <Loader2 className="mr-1.5 size-3.5 animate-spin" aria-hidden />}
+              Remove
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pick template sheet (assign from client view) ─────────────────────────────
+
+interface PickTemplateSheetProps {
+  templates: Program[]
+  selectedIds: Set<string>
+  onToggle: (id: string) => void
+  onAssign: () => void
+  onClose: () => void
+  isAssigning: boolean
+}
+
+function PickTemplateSheet({ templates, selectedIds, onToggle, onAssign, onClose, isAssigning }: PickTemplateSheetProps) {
+  const { t } = useI18n()
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} aria-hidden />
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-1/2 sm:w-96 sm:-translate-x-1/2 sm:-translate-y-1/2"
+        role="dialog"
+        aria-modal
+        aria-label={t.training.pickTemplate}
+      >
+        <div className="rounded-t-2xl border-t border-border bg-card p-6 shadow-xl sm:rounded-2xl sm:border">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-foreground">{t.training.pickTemplate}</h3>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
+          </div>
+          {templates.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">{t.training.noProgramsToAssign}</p>
+          ) : (
+            <div className="mb-4 flex max-h-64 flex-col gap-1 overflow-y-auto">
+              {templates.map((tmpl) => (
+                <label
+                  key={tmpl.id}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-accent/40"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(tmpl.id)}
+                    onChange={() => onToggle(tmpl.id)}
+                    className="size-4 rounded accent-primary"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">{tmpl.name}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {tmpl.days.length} day{tmpl.days.length !== 1 ? 's' : ''} · {totalExercises(tmpl)} exercise{totalExercises(tmpl) !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={selectedIds.size === 0 || isAssigning || templates.length === 0}
+              onClick={onAssign}
+            >
+              {isAssigning && <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />}
+              {t.training.assignBtn}{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+            </Button>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Athlete programs (right panel — client view) ──────────────────────────────
+
+interface AthleteProgramsProps {
+  athlete: MembershipEnriched
+  programs: Program[]
+  myTemplates: Program[]
+  onSelectProgram: (id: string) => void
+  onBack?: () => void
+}
+
+function AthletePrograms({ athlete, programs, myTemplates, onSelectProgram, onBack }: AthleteProgramsProps) {
+  const { t } = useI18n()
+  const [showPicker, setShowPicker] = useState(false)
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set())
+  const assignProgram = useAssignProgram()
+  const deleteProgram = useDeleteProgram()
+
+  function toggleTemplate(id: string) {
+    setSelectedTemplateIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  async function handleAssign() {
+    for (const templateId of selectedTemplateIds) {
+      await assignProgram.mutateAsync({
+        programId: templateId,
+        athleteIds: [athlete.athlete_id],
+      })
+    }
+    setShowPicker(false)
+    setSelectedTemplateIds(new Set())
+  }
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      {onBack && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3 lg:hidden">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" aria-hidden />
+            {t.training.clients}
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-bold text-foreground">{athlete.athlete_email}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {programs.length} program{programs.length !== 1 ? 's' : ''} assigned
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => setShowPicker(true)}
+          >
+            <Plus className="size-4" aria-hidden />
+            {t.training.assignProgram}
+          </Button>
+        </div>
+
+        {programs.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <ClipboardList className="size-10 text-muted" aria-hidden />
+            <p className="font-semibold text-foreground">{t.training.noAssignedPrograms}</p>
+            <p className="text-sm text-muted-foreground">{t.training.noAssignedProgramsDesc}</p>
+            <Button size="sm" onClick={() => setShowPicker(true)}>
+              <Plus className="mr-1.5 size-4" aria-hidden />
+              {t.training.assignProgram}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {programs.map((p) => (
+              <AssignedProgramCard
+                key={p.id}
+                program={p}
+                onSelect={() => onSelectProgram(p.id)}
+                onRemove={() => deleteProgram.mutate(p.id)}
+                isRemoving={deleteProgram.isPending && deleteProgram.variables === p.id}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showPicker && (
+        <PickTemplateSheet
+          templates={myTemplates}
+          selectedIds={selectedTemplateIds}
+          onToggle={toggleTemplate}
+          onAssign={handleAssign}
+          onClose={() => { setShowPicker(false); setSelectedTemplateIds(new Set()) }}
+          isAssigning={assignProgram.isPending}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Program detail (right panel) ──────────────────────────────────────────────
 
 interface ProgramDetailProps {
@@ -651,17 +942,19 @@ interface ProgramDetailProps {
   canEdit: boolean
   currentUserId: string | undefined
   role: string
+  athletes: MembershipEnriched[]
   onDeleteProgram: (id: string) => void
   onDeleteDay: (dayId: string) => void
   onDeleteExercise: (exId: string) => void
   onAddDay: () => void
-  /** Mobile only: called when user taps "back to programs" */
+  /** Called when user taps "back"; label changes based on context */
   onBack?: () => void
+  backLabel?: string
 }
 
 function ProgramDetail({
-  program, exerciseMap, allExercises, canEdit, currentUserId, role,
-  onDeleteProgram, onDeleteDay, onDeleteExercise, onAddDay, onBack,
+  program, exerciseMap, allExercises, canEdit, currentUserId, role, athletes,
+  onDeleteProgram, onDeleteDay, onDeleteExercise, onAddDay, onBack, backLabel,
 }: ProgramDetailProps) {
   const { t } = useI18n()
   const [startingDayId, setStartingDayId] = useState<string | null>(null)
@@ -669,15 +962,43 @@ function ProgramDetail({
   const [activeSessionConflict, setActiveSessionConflict] = useState(false)
   const [pendingDay, setPendingDay] = useState<ProgramDay | null>(null)
   const [isDiscarding, setIsDiscarding] = useState(false)
+  const [showAssignPanel, setShowAssignPanel] = useState(false)
+  const [selectedAthleteIds, setSelectedAthleteIds] = useState<Set<string>>(new Set())
   const router = useRouter()
   const startSession = useStartSession()
   const queryClient = useQueryClient()
   const activeSession = useActiveSession()
+  const assignProgram = useAssignProgram()
 
   const sortedDays = [...program.days].sort((a, b) => a.position - b.position)
 
   const isAssignedToOther =
     program.athlete_id && program.athlete_id !== currentUserId
+
+  // Only show assign panel for trainer's own templates, not for copies assigned to athletes
+  const canAssign =
+    (role === 'trainer' || role === 'gym_admin') &&
+    athletes.length > 0 &&
+    (!program.athlete_id || program.athlete_id === currentUserId)
+  const assignedAthlete = athletes.find((m) => m.athlete_id === program.athlete_id)
+
+  function toggleAthlete(athleteId: string) {
+    setSelectedAthleteIds((prev) => {
+      const next = new Set(prev)
+      next.has(athleteId) ? next.delete(athleteId) : next.add(athleteId)
+      return next
+    })
+  }
+
+  async function handleAssign() {
+    if (selectedAthleteIds.size === 0) return
+    await assignProgram.mutateAsync({
+      programId: program.id,
+      athleteIds: [...selectedAthleteIds],
+    })
+    setShowAssignPanel(false)
+    setSelectedAthleteIds(new Set())
+  }
 
   async function handleStartSession(day: ProgramDay) {
     setStartingDayId(day.id)
@@ -728,16 +1049,21 @@ function ProgramDetail({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      {/* Mobile back button */}
+      {/* Back button */}
       {onBack && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3 lg:hidden">
+        <div className={cn(
+          'flex items-center gap-2 border-b border-border px-4 py-3',
+          // Hide on desktop when going back to programs list (left panel is always visible)
+          // but always show when going back to an athlete view
+          !backLabel || backLabel === t.training.myPrograms ? 'lg:hidden' : '',
+        )}>
           <button
             type="button"
             onClick={onBack}
             className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" aria-hidden />
-            {t.training.myPrograms}
+            {backLabel ?? t.training.myPrograms}
           </button>
         </div>
       )}
@@ -837,13 +1163,72 @@ function ProgramDetail({
           )}
         </div>
 
-        {/* Assigned-to banner (trainer/admin only) */}
-        {isAssignedToOther && (role === 'trainer' || role === 'gym_admin') && (
-          <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
-            <User className="size-4 shrink-0 text-primary" aria-hidden />
-            <p className="text-sm text-foreground">
-              {t.training.assignedToAthlete}
-            </p>
+        {/* Assign-to-athlete section (trainer/admin only) */}
+        {canAssign && (
+          <div className="mb-4">
+            {/* Banner when the program itself is assigned to someone else */}
+            {isAssignedToOther && (
+              <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                <User className="size-4 shrink-0 text-primary" aria-hidden />
+                <p className="truncate text-sm text-foreground">
+                  {t.training.assignedTo}: <span className="font-medium">{assignedAthlete?.athlete_email ?? program.athlete_id}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Assign / assign-to-more button */}
+            {!showAssignPanel && (
+              <button
+                type="button"
+                onClick={() => setShowAssignPanel(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-dashed border-primary/30 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary/60 hover:bg-primary/5"
+              >
+                <User className="size-4" aria-hidden />
+                {t.training.assignToAthlete}
+              </button>
+            )}
+
+            {/* Multi-select panel */}
+            {showAssignPanel && (
+              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                <p className="mb-3 text-sm font-medium text-foreground">{t.training.assignToAthlete}</p>
+                <div className="mb-3 flex flex-col gap-1.5">
+                  {athletes.map((m) => (
+                    <label
+                      key={m.athlete_id}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-accent/40"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAthleteIds.has(m.athlete_id)}
+                        onChange={() => toggleAthlete(m.athlete_id)}
+                        className="size-4 rounded accent-primary"
+                      />
+                      <span className="text-sm text-foreground">{m.athlete_email}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    disabled={selectedAthleteIds.size === 0 || assignProgram.isPending}
+                    onClick={handleAssign}
+                  >
+                    {assignProgram.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" aria-hidden />}
+                    {t.training.assignBtn}
+                    {selectedAthleteIds.size > 0 && ` (${selectedAthleteIds.size})`}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setShowAssignPanel(false); setSelectedAthleteIds(new Set()) }}
+                  >
+                    {t.common.cancel}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -899,10 +1284,11 @@ function ProgramDetail({
 interface ProgramRowProps {
   program: Program
   selected: boolean
+  athleteEmail?: string
   onSelect: () => void
 }
 
-function ProgramRow({ program, selected, onSelect }: ProgramRowProps) {
+function ProgramRow({ program, selected, athleteEmail, onSelect }: ProgramRowProps) {
   const dayCount = program.days.length
   const exCount = totalExercises(program)
 
@@ -927,6 +1313,11 @@ function ProgramRow({ program, selected, onSelect }: ProgramRowProps) {
       <p className="text-[11px] text-muted-foreground">
         {dayCount} day{dayCount !== 1 ? 's' : ''} · {exCount} exercise{exCount !== 1 ? 's' : ''}
       </p>
+      {athleteEmail && (
+        <p className="text-[10px] text-primary/70 truncate w-full">
+          {athleteEmail}
+        </p>
+      )}
     </button>
   )
 }
@@ -1215,6 +1606,7 @@ export default function TrainingPage() {
   const deleteExerciseMutation = useDeleteProgramExercise()
 
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null)
+  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null)
   const [showNewProgram, setShowNewProgram] = useState(false)
   const [showAddDay, setShowAddDay] = useState(false)
   const [createProgramError, setCreateProgramError] = useState<string | null>(null)
@@ -1230,13 +1622,17 @@ export default function TrainingPage() {
   )
 
   const selectedProgram = programs.find((p) => p.id === selectedProgramId) ?? null
+  const selectedAthlete = myAthletes.find((m) => m.athlete_id === selectedAthleteId) ?? null
+  const athletePrograms = selectedAthleteId
+    ? forAthletes.filter((p) => p.athlete_id === selectedAthleteId)
+    : []
 
   // Auto-select first program when list loads (desktop only — on mobile stay on list view)
   useEffect(() => {
-    if (!selectedProgramId && programs.length > 0) {
+    if (!selectedProgramId && !selectedAthleteId && programs.length > 0) {
       setSelectedProgramId(programs[0].id)
     }
-  }, [programs, selectedProgramId])
+  }, [programs, selectedProgramId, selectedAthleteId])
 
   const canEdit =
     role === 'trainer' || role === 'gym_admin' ||
@@ -1273,8 +1669,13 @@ export default function TrainingPage() {
 
   function handleDeleteProgram(id: string) {
     deleteProgram.mutate(id)
-    setSelectedProgramId(programs.find((p) => p.id !== id)?.id ?? null)
-    setMobileView('list')
+    if (selectedAthleteId) {
+      // In client view: stay on client view after deletion
+      setSelectedProgramId(null)
+    } else {
+      setSelectedProgramId(programs.find((p) => p.id !== id)?.id ?? null)
+      setMobileView('list')
+    }
   }
 
   function handleDeleteDay(dayId: string) {
@@ -1287,6 +1688,19 @@ export default function TrainingPage() {
 
   function handleSelectProgram(id: string) {
     setSelectedProgramId(id)
+    setSelectedAthleteId(null)
+    setMobileView('detail')
+  }
+
+  function handleSelectAthlete(athleteId: string) {
+    setSelectedAthleteId(athleteId)
+    setSelectedProgramId(null)
+    setMobileView('detail')
+  }
+
+  function handleSelectAthleteProgram(id: string) {
+    setSelectedProgramId(id)
+    // Keep selectedAthleteId so "back" returns to client view
     setMobileView('detail')
   }
 
@@ -1352,27 +1766,25 @@ export default function TrainingPage() {
                   </div>
                 </div>
 
-                {/* Section: For athletes (trainer / gym_admin) */}
-                {(role === 'trainer' || role === 'gym_admin') && (
+                {/* Section: Clients (trainer / gym_admin) */}
+                {(role === 'trainer' || role === 'gym_admin') && myAthletes.length > 0 && (
                   <div className="mt-2">
                     <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      {t.training.forAthletes}
+                      {t.training.clients}
                     </p>
                     <div className="flex flex-col gap-0.5">
-                      {forAthletes.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-muted-foreground">
-                          No programs assigned to athletes
-                        </p>
-                      ) : (
-                        forAthletes.map((p) => (
-                          <ProgramRow
-                            key={p.id}
-                            program={p}
-                            selected={p.id === selectedProgramId}
-                            onSelect={() => handleSelectProgram(p.id)}
+                      {myAthletes.map((m) => {
+                        const count = forAthletes.filter((p) => p.athlete_id === m.athlete_id).length
+                        return (
+                          <ClientRow
+                            key={m.athlete_id}
+                            athlete={m}
+                            programCount={count}
+                            selected={selectedAthleteId === m.athlete_id && !selectedProgramId}
+                            onSelect={() => handleSelectAthlete(m.athlete_id)}
                           />
-                        ))
-                      )}
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -1381,7 +1793,7 @@ export default function TrainingPage() {
           </div>
         </div>
 
-        {/* Right panel — program detail */}
+        {/* Right panel — athlete view or program detail */}
         <div className={cn(
           'flex min-w-0 flex-col',
           'flex-1',
@@ -1389,6 +1801,14 @@ export default function TrainingPage() {
         )}>
           {isLoading ? (
             <RightPanelSkeleton />
+          ) : selectedAthlete && !selectedProgramId ? (
+            <AthletePrograms
+              athlete={selectedAthlete}
+              programs={athletePrograms}
+              myTemplates={myPrograms}
+              onSelectProgram={handleSelectAthleteProgram}
+              onBack={() => setMobileView('list')}
+            />
           ) : !selectedProgram ? (
             <EmptyRightPanel onNew={() => setShowNewProgram(true)} />
           ) : (
@@ -1399,11 +1819,16 @@ export default function TrainingPage() {
               canEdit={canEdit}
               currentUserId={currentUserId}
               role={role ?? 'athlete'}
+              athletes={myAthletes}
               onDeleteProgram={handleDeleteProgram}
               onDeleteDay={handleDeleteDay}
               onDeleteExercise={handleDeleteExercise}
               onAddDay={() => setShowAddDay(true)}
-              onBack={() => setMobileView('list')}
+              onBack={selectedAthleteId
+                ? () => setSelectedProgramId(null)
+                : () => setMobileView('list')
+              }
+              backLabel={selectedAthlete?.athlete_email ?? t.training.myPrograms}
             />
           )}
         </div>
