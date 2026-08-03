@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
+import { Toaster } from 'sonner'
 import { QueryProvider } from '@/providers/query-provider'
+import { I18nProvider } from '@/providers/i18n-provider'
 import './globals.css'
 
 const inter = Inter({
@@ -20,7 +22,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
-          <QueryProvider>{children}</QueryProvider>
+          <I18nProvider>
+            <QueryProvider>
+              {children}
+              <Toaster position="top-right" closeButton duration={30000} />
+            </QueryProvider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>
