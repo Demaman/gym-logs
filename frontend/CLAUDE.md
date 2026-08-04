@@ -558,34 +558,161 @@ pnpx shadcn add <name>  — add a shadcn/ui component
 ```
 
 ## Layout
+
 ```
 frontend/
 ├── CLAUDE.md
-├── app/
-│   ├── (auth)/
-│   │   └── login/page.tsx
-│   ├── (dashboard)/
-│   │   ├── layout.tsx           # Sidebar shell
-│   │   ├── logs/page.tsx
-│   │   ├── training/page.tsx
-│   │   └── analytics/page.tsx
-│   ├── layout.tsx               # Root layout — providers only
-│   └── page.tsx                 # → redirect to /login or /logs
+├── Dockerfile
+├── next.config.ts
+├── tsconfig.json
+├── vitest.config.ts
+├── postcss.config.mjs
+├── package.json
+├── pnpm-lock.yaml
+│
+├── public/                        Static assets served at /
+│   └── *.svg                      Icons / images — add PNGs and fonts here too
+│
+├── app/                           Next.js 15 App Router
+│   ├── layout.tsx                 Root layout — providers only (QueryProvider, I18nProvider)
+│   ├── page.tsx                   → redirects to /login or /logs
+│   ├── globals.css                Tailwind base + CSS custom properties (color tokens)
+│   ├── favicon.ico
+│   ├── (auth)/                    Public routes — no auth required
+│   │   ├── login/page.tsx
+│   │   ├── register/page.tsx
+│   │   └── forgot-password/page.tsx
+│   └── (dashboard)/               Protected routes — wrapped in sidebar shell + AuthGuard
+│       ├── layout.tsx             Sidebar shell + AuthGuard + role-based nav
+│       ├── overview/page.tsx
+│       ├── logs/
+│       │   ├── page.tsx           Workout log list / athlete dashboard
+│       │   ├── new/page.tsx       Start a free session
+│       │   ├── history/page.tsx   Full session history
+│       │   └── [sessionId]/
+│       │       ├── page.tsx       Active session recorder
+│       │       └── summary/page.tsx
+│       ├── training/page.tsx      Program builder (trainer/admin) + program view (athlete)
+│       ├── athletes/page.tsx      Trainer: their athletes · Admin: all org athletes
+│       ├── trainers/page.tsx      Admin: all org trainers
+│       ├── analytics/page.tsx     Progression charts
+│       ├── health/page.tsx        Athlete profile + body measurements
+│       └── settings/page.tsx      Org settings / personal profile
+│
 ├── components/
-│   ├── ui/                      # shadcn/ui (do not hand-edit)
-│   └── <feature>/               # Feature composites
+│   ├── ui/                        shadcn/ui — auto-generated, NEVER hand-edit
+│   │   ├── alert.tsx              pnpx shadcn add <name> to add new primitives
+│   │   ├── alert-dialog.tsx
+│   │   ├── button.tsx
+│   │   ├── dialog.tsx
+│   │   ├── form.tsx
+│   │   ├── input.tsx
+│   │   ├── label.tsx
+│   │   ├── select.tsx
+│   │   ├── skeleton.tsx
+│   │   ├── tabs.tsx
+│   │   └── textarea.tsx
+│   ├── auth/                      Authentication forms
+│   │   ├── login-form.tsx
+│   │   └── register-form.tsx
+│   ├── charts/                    Chart wrappers (Recharts / Nivo)
+│   │   ├── body-measurement-chart.tsx
+│   │   ├── exercise-progression-chart.tsx
+│   │   └── weekly-volume-chart.tsx
+│   └── layout/                    Shell components used across all pages
+│       ├── auth-guard.tsx         Redirects to /login if unauthenticated
+│       ├── can.tsx                Role-gate wrapper — <Can role="trainer">…</Can>
+│       ├── invite-banner.tsx      Pending invite notification strip
+│       ├── mobile-nav.tsx         Bottom-sheet nav for mobile viewports
+│       └── sidebar.tsx            Desktop left sidebar
+│
+├── hooks/                         TanStack Query — one hook per API operation
+│   ├── use-login.ts
+│   ├── use-logout.ts
+│   ├── use-register.ts
+│   ├── use-role.ts                Reads role from Zustand auth store
+│   ├── analytics/
+│   │   └── use-anamnesis.ts
+│   ├── identity/
+│   │   ├── use-invites.ts
+│   │   ├── use-memberships.ts
+│   │   ├── use-org-athletes.ts
+│   │   └── use-settings.ts
+│   ├── logs/
+│   │   ├── use-active-session.ts
+│   │   ├── use-discard-session.ts
+│   │   ├── use-exercise-history.ts
+│   │   ├── use-exercise-log.ts
+│   │   ├── use-finish-session.ts
+│   │   ├── use-log-set.ts
+│   │   ├── use-multiple-exercise-history.ts
+│   │   ├── use-progress-stats.ts
+│   │   ├── use-session-history.ts
+│   │   ├── use-session.ts
+│   │   ├── use-start-session.ts
+│   │   ├── use-update-session.ts
+│   │   └── use-weekly-volume.ts
+│   └── training/
+│       ├── use-exercises.ts
+│       └── use-programs.ts
+│
 ├── lib/
-│   ├── api/
-│   │   ├── client.ts
+│   ├── utils.ts                   cn() + shared helpers (formatDate, formatWeight…)
+│   ├── api/                       Axios wrappers — one file per backend module
+│   │   ├── client.ts              Single Axios instance + auth/refresh interceptors
 │   │   ├── auth.ts
-│   │   └── ...
-│   ├── auth/store.ts            # Zustand: accessToken + user
-│   └── utils.ts                 # cn() and misc helpers
-├── hooks/
-│   └── use-<feature>.ts
-├── types/api.ts
-└── public/
+│   │   ├── analytics.ts
+│   │   ├── identity.ts
+│   │   ├── logs.ts
+│   │   └── training.ts
+│   ├── auth/
+│   │   ├── store.ts               Zustand: accessToken + User (in-memory only)
+│   │   └── token.ts               localStorage refresh-token helpers
+│   └── i18n/
+│       ├── index.ts               t() helper + locale loader
+│       └── locales/
+│           ├── en.ts
+│           └── pt-BR.ts
+│
+├── providers/
+│   ├── i18n-provider.tsx          Wraps app with i18n context
+│   └── query-provider.tsx         TanStack QueryClientProvider
+│
+├── types/
+│   └── api.ts                     TypeScript mirrors of backend Pydantic schemas
+│
+└── tests/
+    ├── setup.ts                   Vitest global setup (MSW server, jest-dom)
+    ├── components/
+    │   └── layout/
+    │       ├── auth-guard.test.tsx
+    │       └── can.test.tsx
+    ├── hooks/
+    │   ├── use-logout.test.tsx
+    │   └── use-role.test.ts
+    └── lib/
+        └── auth/
+            └── token.test.ts
 ```
+
+### Where things go
+
+| What you're adding | Where it lives |
+|---|---|
+| New dashboard page | `app/(dashboard)/<section>/page.tsx` |
+| New auth page | `app/(auth)/<name>/page.tsx` |
+| shadcn/ui primitive | `components/ui/` via `pnpx shadcn add` — never hand-edit |
+| Feature component (1 domain) | `components/<domain>/<name>.tsx` |
+| Shell / layout component | `components/layout/` |
+| Chart | `components/charts/` |
+| Query or mutation hook | `hooks/<domain>/use-<resource>.ts` |
+| Auth hook (login, logout…) | `hooks/use-<action>.ts` |
+| API function | `lib/api/<module>.ts` using the client from `lib/api/client.ts` |
+| Locale string | `lib/i18n/locales/en.ts` **and** `pt-BR.ts` — always both |
+| New backend type | `types/api.ts` — mirror the Pydantic schema exactly |
+| Provider / context | `providers/<name>-provider.tsx`, mounted in `app/layout.tsx` |
+| Component test | `tests/components/<domain>/<name>.test.tsx` |
+| Hook test | `tests/hooks/use-<name>.test.ts` |
 
 ## Testing
 - Unit test hooks and API functions with Vitest + MSW for API mocking.
