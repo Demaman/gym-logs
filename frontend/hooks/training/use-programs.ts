@@ -4,13 +4,14 @@ import {
   listPrograms, createProgram, getProgram,
   assignProgramToAthletes, updateProgram, deleteProgram,
   addDay, updateDay, deleteDay,
-  addExerciseToDay, deleteProgramExercise,
+  addExerciseToDay, updateProgramExercise, deleteProgramExercise,
   addPrescribedSet, deletePrescribedSet,
 } from '@/lib/api/training'
 import type {
   UpdateProgramRequest,
   CreateProgramDayRequest, UpdateProgramDayRequest,
   AddExerciseToDayRequest, AddPrescribedSetRequest,
+  UpdateProgramExerciseRequest,
 } from '@/types/api'
 
 const PROGRAMS_KEY = ['training', 'programs'] as const
@@ -110,6 +111,17 @@ export function useAddExerciseToDay() {
   return useMutation({
     mutationFn: ({ dayId, payload }: { dayId: string; payload: AddExerciseToDayRequest }) =>
       addExerciseToDay(dayId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PROGRAMS_KEY })
+    },
+  })
+}
+
+export function useUpdateProgramExercise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ exId, payload }: { exId: string; payload: UpdateProgramExerciseRequest }) =>
+      updateProgramExercise(exId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: PROGRAMS_KEY })
     },

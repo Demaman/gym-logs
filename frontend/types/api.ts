@@ -18,7 +18,14 @@ export interface Organization {
   address_state: string | null
   address_zip: string | null
   website: string | null
+  plan: 'free' | 'pro'
   created_at: string
+}
+
+export interface GenerateProgramRequest {
+  athlete_id?: string | null
+  notes?: string | null
+  locale?: string
 }
 
 export interface OrgLookup {
@@ -140,6 +147,7 @@ export interface Exercise {
   is_bilateral: boolean
   is_global: boolean
   notes: string | null
+  demo_video_url: string | null
   created_at: string
 }
 
@@ -162,6 +170,7 @@ export interface ProgramExercise {
   exercise_id: string
   position: number
   notes: string | null
+  demo_video_url: string | null
   prescribed_sets: PrescribedSet[]
 }
 
@@ -180,6 +189,7 @@ export interface Program {
   athlete_id: string | null
   name: string
   description: string | null
+  guidelines: string | null
   mode: SessionMode
   is_active: boolean
   created_at: string
@@ -219,6 +229,7 @@ export interface LoggedExercise {
   exercise_name_free: string | null
   position: number
   notes: string | null
+  demo_video_url: string | null
   logged_sets: LoggedSet[]
   prescribed_sets: PrescribedSetTarget[]
 }
@@ -274,13 +285,27 @@ export interface CreateExerciseRequest {
   movement_pattern: MovementPattern
   is_bilateral?: boolean
   notes?: string
+  demo_video_url?: string | null
+}
+
+export interface UpdateExerciseRequest {
+  name?: string
+  aliases?: string[]
+  muscle_group?: MuscleGroup
+  secondary_muscles?: string[]
+  equipment?: Equipment
+  movement_pattern?: MovementPattern
+  is_bilateral?: boolean
+  notes?: string | null
+  demo_video_url?: string | null
 }
 
 // ── Training request types ────────────────────────────────────────────────────
 
 export interface UpdateProgramRequest {
   name?: string
-  description?: string
+  description?: string | null
+  guidelines?: string | null
   athlete_id?: string
 }
 
@@ -300,6 +325,11 @@ export interface AddExerciseToDayRequest {
   exercise_id: string
   position: number
   notes?: string
+  demo_video_url?: string | null
+}
+
+export interface UpdateProgramExerciseRequest {
+  demo_video_url?: string | null
 }
 
 export interface AddPrescribedSetRequest {

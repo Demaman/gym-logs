@@ -15,22 +15,30 @@ import {
   MoreHorizontal,
   User,
   ArrowLeft,
+  Sparkles,
+  BookOpen,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/hooks/use-role'
 import { useAuthStore } from '@/lib/auth/store'
 import { useI18n } from '@/providers/i18n-provider'
 import { useQueryClient } from '@tanstack/react-query'
-import { usePrograms, useCreateProgram, useAssignProgram, useDeleteProgram, useAddDay, useDeleteDay, useDeleteProgramExercise } from '@/hooks/training/use-programs'
-import { addExerciseToDay, addPrescribedSet, replacePrescribedSets } from '@/lib/api/training'
+import { usePrograms, useCreateProgram, useAssignProgram, useDeleteProgram, useAddDay, useDeleteDay, useDeleteProgramExercise, useUpdateProgram } from '@/hooks/training/use-programs'
+import { addExerciseToDay, addPrescribedSet, replacePrescribedSets, updateProgramExercise } from '@/lib/api/training'
 import { useStartSession } from '@/hooks/logs/use-start-session'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
 import { deleteSession } from '@/lib/api/logs'
 import { useExerciseSearch } from '@/hooks/training/use-exercises'
 import { useMyMemberships } from '@/hooks/identity/use-memberships'
+import { useMyOrganization } from '@/hooks/identity/use-settings'
+import { GenerateProgramSheet } from '@/components/ai/generate-program-sheet'
+import { ExerciseVideoModal, VideoPreviewButton } from '@/components/training/exercise-video-modal'
+import { ExerciseFormSheet } from '@/components/training/exercise-form-sheet'
 import type { MembershipEnriched, Program, ProgramDay, ProgramExercise, PrescribedSet, DayTag, Exercise } from '@/types/api'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -101,7 +109,12 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
   const name = exercise?.name ?? 'Unknown exercise'
   const [editing, setEditing] = useState(false)
   const [drafts, setDrafts] = useState<SetDraft[]>([])
+  const [videoDraft, setVideoDraft] = useState('')
+  const [showVideo, setShowVideo] = useState(false)
+  const [showExerciseForm, setShowExerciseForm] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+
+  const videoUrl = ex.demo_video_url ?? exercise?.demo_video_url ?? null
 
   function openEdit() {
     const base = ex.prescribed_sets.length > 0
@@ -112,6 +125,7 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
         }))
       : [{ rep_min: 8, rep_max: 12, rpe: '' }]
     setDrafts(base)
+    setVideoDraft(ex.demo_video_url ?? '')
     setEditing(true)
   }
 
@@ -135,16 +149,22 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
   async function save() {
     setIsSaving(true)
     try {
-      await replacePrescribedSets(
-        ex.id,
-        drafts.map((d, i) => ({
-          position: i + 1,
-          set_type: 'working' as const,
-          rep_min: d.rep_min,
-          rep_max: d.rep_max,
-          rpe_target: d.rpe !== '' ? parseFloat(d.rpe) : null,
-        })),
-      )
+      const videoChanged = videoDraft.trim() !== (ex.demo_video_url ?? '')
+      if (drafts.length > 0) {
+        await replacePrescribedSets(
+          ex.id,
+          drafts.map((d, i) => ({
+            position: i + 1,
+            set_type: 'working' as const,
+            rep_min: d.rep_min,
+            rep_max: d.rep_max,
+            rpe_target: d.rpe !== '' ? parseFloat(d.rpe) : null,
+          })),
+        )
+      }
+      if (videoChanged) {
+        await updateProgramExercise(ex.id, { demo_video_url: videoDraft.trim() || null })
+      }
       await qc.invalidateQueries({ queryKey: ['training', 'programs'] })
       setEditing(false)
     } finally {
@@ -178,6 +198,26 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
           <p className="truncate text-sm font-medium text-foreground">{name}</p>
           <SetsChip sets={ex.prescribed_sets} />
         </div>
+        {videoUrl && (
+          <button
+            type="button"
+            aria-label={`${t.training.watchDemo}: ${name}`}
+            onClick={(e) => { e.stopPropagation(); setShowVideo(true) }}
+            className="shrink-0 rounded-md p-1 text-primary transition-colors hover:bg-primary/10"
+          >
+            <Play className="size-3.5" aria-hidden />
+          </button>
+        )}
+        {canEdit && exercise && !exercise.is_global && (
+          <button
+            type="button"
+            aria-label={`${t.training.editExercise}: ${name}`}
+            onClick={(e) => { e.stopPropagation(); setShowExerciseForm(true) }}
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Pencil className="size-3.5" aria-hidden />
+          </button>
+        )}
         {canEdit && (
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <ChevronDown
@@ -259,8 +299,22 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
             {t.training.addSet}
           </button>
 
+          {/* Video URL for this exercise in the program */}
+          <div className="mb-3 border-t border-border pt-3">
+            <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+              {t.training.videoUrlLabel}
+            </label>
+            <input
+              type="url"
+              value={videoDraft}
+              onChange={(e) => setVideoDraft(e.target.value)}
+              placeholder={t.training.videoUrlPlaceholder}
+              className="w-full rounded border border-input bg-card px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
           <div className="flex gap-2">
-            <Button size="sm" className="flex-1" disabled={isSaving || drafts.length === 0} onClick={save}>
+            <Button size="sm" className="flex-1" disabled={isSaving} onClick={save}>
               {isSaving && <Loader2 className="mr-1.5 size-3.5 animate-spin" aria-hidden />}
               {t.training.saveSets}
             </Button>
@@ -269,6 +323,21 @@ function ExerciseRow({ ex, exerciseMap, canEdit, onDelete }: ExerciseRowProps) {
             </Button>
           </div>
         </div>
+      )}
+      {showVideo && videoUrl && (
+        <ExerciseVideoModal
+          url={videoUrl}
+          exerciseName={name}
+          onClose={() => setShowVideo(false)}
+        />
+      )}
+      {showExerciseForm && exercise && !exercise.is_global && (
+        <ExerciseFormSheet
+          open={showExerciseForm}
+          exercise={exercise}
+          onClose={() => setShowExerciseForm(false)}
+          onSuccess={() => setShowExerciseForm(false)}
+        />
       )}
     </div>
   )
@@ -293,6 +362,8 @@ function AddExercisePanel({ dayId, dayExerciseCount, exercises, onClose }: AddEx
   const [repMax, setRepMax] = useState(12)
   const [rpe, setRpe] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingExercise, setEditingExercise] = useState<Exercise | undefined>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -331,31 +402,55 @@ function AddExercisePanel({ dayId, dayExerciseCount, exercises, onClose }: AddEx
   // ── Step 1: pick exercise ──────────────────────────────────────────────────
   if (!selectedEx) {
     return (
+      <>
       <div className="mt-2 rounded-xl border border-border bg-card p-3 shadow-sm">
-        <div className="relative mb-2">
+        {/* Header row: search + New exercise button */}
+        <div className="mb-2 flex items-center gap-2">
           <Input
             ref={inputRef}
             placeholder={t.logs.searchExercises}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="h-8 text-sm"
+            className="h-8 flex-1 text-sm"
           />
+          <button
+            type="button"
+            onClick={() => { setEditingExercise(undefined); setFormOpen(true) }}
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            <Plus className="size-3" aria-hidden />
+            {t.training.newExercise}
+          </button>
         </div>
         <div className="max-h-40 overflow-y-auto">
           {filtered.length === 0 ? (
             <p className="py-4 text-center text-xs text-muted-foreground">{t.logs.noExercises}</p>
           ) : (
             filtered.slice(0, 20).map((ex) => (
-              <button
-                key={ex.id}
-                type="button"
-                onClick={() => setSelectedEx(ex)}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-accent/50"
-              >
-                <Dumbbell className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="truncate text-foreground">{ex.name}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ex.muscle_group}</span>
-              </button>
+              <div key={ex.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEx(ex)}
+                  className="flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-accent/50"
+                >
+                  <Dumbbell className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate text-foreground">{ex.name}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ex.muscle_group}</span>
+                </button>
+                {ex.demo_video_url && (
+                  <VideoPreviewButton url={ex.demo_video_url} name={ex.name} />
+                )}
+                {!ex.is_global && (
+                  <button
+                    type="button"
+                    aria-label={`${t.training.editExercise}: ${ex.name}`}
+                    onClick={(e) => { e.stopPropagation(); setEditingExercise(ex); setFormOpen(true) }}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <Pencil className="size-3" aria-hidden />
+                  </button>
+                )}
+              </div>
             ))
           )}
         </div>
@@ -365,6 +460,16 @@ function AddExercisePanel({ dayId, dayExerciseCount, exercises, onClose }: AddEx
           </button>
         </div>
       </div>
+      <ExerciseFormSheet
+        open={formOpen}
+        exercise={editingExercise}
+        onClose={() => setFormOpen(false)}
+        onSuccess={(ex) => {
+          setFormOpen(false)
+          if (!editingExercise) setSelectedEx(ex)
+        }}
+      />
+      </>
     )
   }
 
@@ -964,11 +1069,34 @@ function ProgramDetail({
   const [isDiscarding, setIsDiscarding] = useState(false)
   const [showAssignPanel, setShowAssignPanel] = useState(false)
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<Set<string>>(new Set())
+  const [editingGuidelines, setEditingGuidelines] = useState(false)
+  const [guidelinesValue, setGuidelinesValue] = useState(program.guidelines ?? '')
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [descriptionValue, setDescriptionValue] = useState(program.description ?? '')
   const router = useRouter()
   const startSession = useStartSession()
   const queryClient = useQueryClient()
   const activeSession = useActiveSession()
   const assignProgram = useAssignProgram()
+  const updateProgram = useUpdateProgram()
+
+  const canEditGuidelines = role === 'trainer' || role === 'gym_admin'
+
+  async function handleSaveGuidelines() {
+    await updateProgram.mutateAsync({
+      id: program.id,
+      payload: { guidelines: guidelinesValue.trim() || null },
+    })
+    setEditingGuidelines(false)
+  }
+
+  async function handleSaveDescription() {
+    await updateProgram.mutateAsync({
+      id: program.id,
+      payload: { description: descriptionValue.trim() || null },
+    })
+    setEditingDescription(false)
+  }
 
   const sortedDays = [...program.days].sort((a, b) => a.position - b.position)
 
@@ -1126,9 +1254,63 @@ function ProgramDetail({
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-xl font-bold text-foreground">{program.name}</h2>
-            {program.description && (
-              <p className="mt-1 text-sm text-muted-foreground">{program.description}</p>
-            )}
+            {editingDescription ? (
+              <div className="mt-2 flex flex-col gap-2">
+                <Textarea
+                  placeholder={t.training.descriptionPlaceholder}
+                  value={descriptionValue}
+                  onChange={(e) => setDescriptionValue(e.target.value)}
+                  className="min-h-[72px] text-sm"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveDescription}
+                    disabled={updateProgram.isPending}
+                  >
+                    {updateProgram.isPending && (
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" aria-hidden />
+                    )}
+                    {t.training.saveDescription}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditingDescription(false)
+                      setDescriptionValue(program.description ?? '')
+                    }}
+                  >
+                    {t.common.cancel}
+                  </Button>
+                </div>
+              </div>
+            ) : program.description ? (
+              <div className="mt-1 flex items-start gap-1.5">
+                <p className="text-sm text-muted-foreground">{program.description}</p>
+                {canEditGuidelines && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDescriptionValue(program.description ?? '')
+                      setEditingDescription(true)
+                    }}
+                    className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={t.training.editDescription}
+                  >
+                    <Pencil className="size-3" aria-hidden />
+                  </button>
+                )}
+              </div>
+            ) : canEditGuidelines ? (
+              <button
+                type="button"
+                onClick={() => setEditingDescription(true)}
+                className="mt-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                + {t.training.editDescription}
+              </button>
+            ) : null}
             <p className="mt-1 text-xs text-muted-foreground">
               {sortedDays.length} day{sortedDays.length !== 1 ? 's' : ''} · {totalExercises(program)} exercise{totalExercises(program) !== 1 ? 's' : ''}
             </p>
@@ -1231,6 +1413,86 @@ function ProgramDetail({
             )}
           </div>
         )}
+
+        {/* Guidelines */}
+        {editingGuidelines ? (
+          <div className="mb-6 flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <BookOpen className="size-4" aria-hidden />
+              {t.training.guidelines}
+            </label>
+            <Textarea
+              placeholder={t.training.guidelinesPlaceholder}
+              value={guidelinesValue}
+              onChange={(e) => setGuidelinesValue(e.target.value)}
+              className="min-h-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">{t.training.guidelinesHint}</p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleSaveGuidelines}
+                disabled={updateProgram.isPending}
+              >
+                {updateProgram.isPending && (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" aria-hidden />
+                )}
+                {t.training.saveGuidelines}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingGuidelines(false)
+                  setGuidelinesValue(program.guidelines ?? '')
+                }}
+              >
+                {t.common.cancel}
+              </Button>
+            </div>
+          </div>
+        ) : program.guidelines ? (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/20">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <BookOpen className="size-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+                <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {t.training.guidelines}
+                </h3>
+              </div>
+              {canEditGuidelines && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGuidelinesValue(program.guidelines ?? '')
+                    setEditingGuidelines(true)
+                  }}
+                  className="flex items-center gap-1 text-xs text-amber-700 transition-colors hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                  aria-label={t.training.editGuidelines}
+                >
+                  <Pencil className="size-3" aria-hidden />
+                  {t.training.editGuidelines}
+                </button>
+              )}
+            </div>
+            <p className="whitespace-pre-wrap text-sm text-amber-800 dark:text-amber-200">
+              {program.guidelines}
+            </p>
+          </div>
+        ) : canEditGuidelines ? (
+          <div className="mb-6">
+            <p className="text-sm text-muted-foreground">
+              {t.training.noGuidelines}{' '}
+              <button
+                type="button"
+                onClick={() => setEditingGuidelines(true)}
+                className="font-medium text-primary hover:underline"
+              >
+                + {t.training.editGuidelines}
+              </button>
+            </p>
+          </div>
+        ) : null}
 
         {/* Days */}
         {sortedDays.length === 0 ? (
@@ -1596,6 +1858,7 @@ export default function TrainingPage() {
   )
   const { data: myMemberships = [] } = useMyMemberships()
   const myAthletes = role === 'trainer' ? myMemberships : []
+  const { data: myOrg } = useMyOrganization()
 
   const exerciseMap = new Map(allExercises.map((e) => [e.id, e]))
 
@@ -1608,6 +1871,7 @@ export default function TrainingPage() {
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null)
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null)
   const [showNewProgram, setShowNewProgram] = useState(false)
+  const [showGenerateAI, setShowGenerateAI] = useState(false)
   const [showAddDay, setShowAddDay] = useState(false)
   const [createProgramError, setCreateProgramError] = useState<string | null>(null)
   // Mobile master-detail state
@@ -1714,10 +1978,20 @@ export default function TrainingPage() {
           <h1 className="text-base font-semibold text-foreground">{t.training.title}</h1>
           <p className="text-xs text-muted-foreground">{t.training.subtitle}</p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setShowNewProgram(true)}>
-          <Plus className="size-4" aria-hidden />
-          <span className="hidden sm:inline">{t.training.newProgram}</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowGenerateAI(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/40"
+          >
+            <Sparkles className="size-3.5" aria-hidden />
+            <span className="hidden sm:inline">{t.training.generateWithAI}</span>
+          </button>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowNewProgram(true)}>
+            <Plus className="size-4" aria-hidden />
+            <span className="hidden sm:inline">{t.training.newProgram}</span>
+          </Button>
+        </div>
       </header>
 
       {/* Master-detail split */}
@@ -1835,6 +2109,14 @@ export default function TrainingPage() {
       </div>
 
       {/* Sheets */}
+      <GenerateProgramSheet
+        open={showGenerateAI}
+        onClose={() => setShowGenerateAI(false)}
+        onSuccess={(id) => { setSelectedProgramId(id); setMobileView('detail') }}
+        isPro={myOrg?.plan === 'pro'}
+        athletes={myAthletes}
+        role={role ?? 'athlete'}
+      />
       <NewProgramSheet
         open={showNewProgram}
         onClose={() => { setShowNewProgram(false); setCreateProgramError(null) }}

@@ -1,10 +1,11 @@
 import type {
-  Exercise, CreateExerciseRequest,
+  Exercise, CreateExerciseRequest, UpdateExerciseRequest,
   Program, ProgramDay, ProgramExercise, PrescribedSet,
   MuscleGroup, Equipment,
   UpdateProgramRequest,
   CreateProgramDayRequest, UpdateProgramDayRequest,
   AddExerciseToDayRequest, AddPrescribedSetRequest,
+  UpdateProgramExerciseRequest,
 } from '@/types/api'
 import { api } from './client'
 
@@ -21,6 +22,18 @@ export async function searchExercises(params: {
 
 export async function createExercise(payload: CreateExerciseRequest): Promise<Exercise> {
   const { data } = await api.post<Exercise>('/api/v1/training/exercises', payload)
+  return data
+}
+
+export async function updateExercise(id: string, payload: UpdateExerciseRequest): Promise<Exercise> {
+  const { data } = await api.put<Exercise>(`/api/v1/training/exercises/${id}`, payload)
+  return data
+}
+
+export async function uploadExerciseVideo(id: string, file: File): Promise<Exercise> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post<Exercise>(`/api/v1/training/exercises/${id}/video`, form)
   return data
 }
 
@@ -96,6 +109,17 @@ export async function addExerciseToDay(
 ): Promise<ProgramExercise> {
   const { data } = await api.post<ProgramExercise>(
     `/api/v1/training/days/${dayId}/exercises`,
+    payload,
+  )
+  return data
+}
+
+export async function updateProgramExercise(
+  exId: string,
+  payload: UpdateProgramExerciseRequest,
+): Promise<ProgramExercise> {
+  const { data } = await api.patch<ProgramExercise>(
+    `/api/v1/training/program-exercises/${exId}`,
     payload,
   )
   return data
