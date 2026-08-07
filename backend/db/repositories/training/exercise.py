@@ -16,6 +16,16 @@ class ExerciseRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_ids(
+        self, exercise_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, "Exercise"]:
+        if not exercise_ids:
+            return {}
+        result = await self._s.execute(
+            select(Exercise).where(Exercise.id.in_(exercise_ids))
+        )
+        return {ex.id: ex for ex in result.scalars().all()}
+
     async def search(
         self,
         organization_id: uuid.UUID | None,
@@ -76,6 +86,7 @@ class ExerciseRepository:
         is_global: bool,
         created_by_id: uuid.UUID | None,
         notes: str | None,
+        demo_video_url: str | None = None,
     ) -> Exercise:
         exercise = Exercise(
             organization_id=organization_id,
@@ -89,6 +100,7 @@ class ExerciseRepository:
             is_global=is_global,
             created_by_id=created_by_id,
             notes=notes,
+            demo_video_url=demo_video_url,
         )
         self._s.add(exercise)
         await self._s.commit()

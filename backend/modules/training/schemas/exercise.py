@@ -48,6 +48,7 @@ class ExerciseCreate(BaseModel):
     movement_pattern: MovementPatternLiteral
     is_bilateral: bool = True
     notes: str | None = None
+    demo_video_url: str | None = None
 
 
 class ExerciseUpdate(BaseModel):
@@ -59,6 +60,7 @@ class ExerciseUpdate(BaseModel):
     movement_pattern: MovementPatternLiteral | None = None
     is_bilateral: bool | None = None
     notes: str | None = None
+    demo_video_url: str | None = None
 
 
 class ExerciseResponse(BaseModel):
@@ -73,5 +75,6 @@ class ExerciseResponse(BaseModel):
     is_bilateral: bool
     is_global: bool
     notes: str | None
+    demo_video_url: str | None
     created_at: datetime
     model_config = {"from_attributes": True}
