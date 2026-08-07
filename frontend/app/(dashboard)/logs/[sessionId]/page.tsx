@@ -15,6 +15,7 @@ import {
   Timer,
   MoreHorizontal,
   ClipboardList,
+  Play,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,7 @@ import { useExerciseSearch } from '@/hooks/training/use-exercises'
 import { useExerciseLastSession } from '@/hooks/logs/use-exercise-history'
 import { usePrograms } from '@/hooks/training/use-programs'
 import { useI18n } from '@/providers/i18n-provider'
+import { ExerciseVideoModal, VideoPreviewButton } from '@/components/training/exercise-video-modal'
 import type { WorkoutSession, LoggedExercise, LoggedSet, SetType, ExerciseLastSession, DayTag, PrescribedSetTarget } from '@/types/api'
 
 // ── Volume helper ─────────────────────────────────────────────────────────────
@@ -87,6 +89,7 @@ interface RestTimerBannerProps {
 }
 
 function RestTimerBanner({ startedAt, onStop }: RestTimerBannerProps) {
+  const { t } = useI18n()
   const elapsed = useCountUp(startedAt)
   if (!startedAt) return null
 
@@ -99,7 +102,7 @@ function RestTimerBanner({ startedAt, onStop }: RestTimerBannerProps) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 shadow-sm">
       <span className={cn('size-2.5 shrink-0 rounded-full animate-pulse', color)} aria-hidden />
-      <span className="text-xs font-medium text-muted-foreground">Resting</span>
+      <span className="text-xs font-medium text-muted-foreground">{t.logs.resting}</span>
       <span className="flex-1 text-center text-lg font-bold tabular-nums text-foreground">
         {formatCountUp(elapsed)}
       </span>
@@ -113,7 +116,7 @@ function RestTimerBanner({ startedAt, onStop }: RestTimerBannerProps) {
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         )}
       >
-        Done
+        {t.logs.restDone}
       </button>
     </div>
   )
@@ -132,8 +135,10 @@ const SET_TYPE_STYLES: Record<string, string> = {
 }
 
 function SetTypeBadge({ type }: { type: SetType }) {
+  const { t } = useI18n()
   const styles = SET_TYPE_STYLES[type] ?? 'bg-secondary text-muted-foreground'
-  const label = type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  const translated = (t.logs.setTypes as Record<string, string>)[type]
+  const label = translated ?? type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
   return (
     <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize', styles)}>
       {label}
@@ -154,14 +159,12 @@ interface AddSetFormProps {
 }
 
 function AddSetForm({ sessionId, exerciseId, onAfterLog }: AddSetFormProps) {
+  const { t } = useI18n()
   const [weight, setWeight] = useState('')
   const [reps, setReps] = useState('')
   const [setType, setSetType] = useState<SetType>('working')
   const [showRpe, setShowRpe] = useState(false)
   const [rpe, setRpe] = useState('')
-  // Set timer
-  const [setTimerStart, setSetTimerStart] = useState<Date | null>(null)
-  const setTimerElapsed = useCountUp(setTimerStart)
 
   const addSet = useAddSet(sessionId, exerciseId)
 
@@ -182,12 +185,10 @@ function AddSetForm({ sessionId, exerciseId, onAfterLog }: AddSetFormProps) {
       },
       {
         onSuccess: () => {
-          const logged = setTimerStart ? setTimerElapsed : 0
           setWeight('')
           setReps('')
           setRpe('')
-          setSetTimerStart(null)
-          onAfterLog?.(logged)
+          onAfterLog?.(0)
         },
       },
     )
@@ -197,22 +198,23 @@ function AddSetForm({ sessionId, exerciseId, onAfterLog }: AddSetFormProps) {
     <form
       onSubmit={handleSubmit}
       className="mt-2 rounded-lg border border-border bg-background/60 p-3"
-      aria-label="Log a set"
+      aria-label={t.logs.logSet}
     >
       {/* Set type chips */}
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
-        {SET_TYPE_CHIPS.map((t) => {
-          const label = t.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+        {SET_TYPE_CHIPS.map((chip) => {
+          const translated = (t.logs.setTypes as Record<string, string>)[chip]
+          const label = translated ?? chip.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
           return (
             <button
-              key={t}
+              key={chip}
               type="button"
-              onClick={() => setSetType(t)}
-              aria-pressed={setType === t}
+              onClick={() => setSetType(chip)}
+              aria-pressed={setType === chip}
               className={cn(
                 'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                setType === t
+                setType === chip
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-secondary text-foreground hover:bg-secondary/70',
               )}
@@ -275,44 +277,25 @@ function AddSetForm({ sessionId, exerciseId, onAfterLog }: AddSetFormProps) {
           onClick={() => setShowRpe((v) => !v)}
           className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline transition-colors"
         >
-          {showRpe ? 'Hide RPE' : 'RPE?'}
+          {showRpe ? t.logs.hideRpe : t.logs.rpeQuestion}
         </button>
       </div>
 
-      {/* Footer: set timer + submit */}
-      <div className="mt-3 flex items-center justify-between gap-2">
-        {/* Set timer — tap to start/stop, informational only */}
-        <button
-          type="button"
-          aria-label={setTimerStart ? 'Stop set timer' : 'Start set timer'}
-          onClick={() =>
-            setSetTimerStart((prev) => (prev ? null : new Date()))
-          }
-          className={cn(
-            'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium tabular-nums transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            setTimerStart
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-          )}
-        >
-          <Timer className="size-3.5 shrink-0" aria-hidden />
-          {setTimerStart ? formatCountUp(setTimerElapsed) : 'Set timer'}
-        </button>
-
+      {/* Footer: submit */}
+      <div className="mt-3 flex items-center justify-end gap-2">
         <Button
           type="submit"
           size="sm"
           disabled={!isValid || addSet.isPending}
-          aria-label="Log this set"
+          aria-label={t.logs.logSet}
         >
           {addSet.isPending ? (
             <>
               <Loader2 className="size-3 animate-spin" aria-hidden />
-              Logging…
+              {t.logs.loggingSet}
             </>
           ) : (
-            'Log set'
+            t.logs.logSet
           )}
         </Button>
       </div>
@@ -329,6 +312,7 @@ function ReferencePanel({
   prescribed: PrescribedSetTarget[]
   last: ExerciseLastSession | undefined
 }) {
+  const { t } = useI18n()
   const [showAvg, setShowAvg] = useState(false)
 
   if (prescribed.length === 0 && !last) return null
@@ -350,17 +334,17 @@ function ReferencePanel({
         {/* Header row */}
         <span />
         <span className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-primary/80">
-          {prescribed.length > 0 ? 'Targets' : ''}
+          {prescribed.length > 0 ? t.logs.targets : ''}
         </span>
         <div className="flex items-center gap-1 pb-1">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {last ? `Last · ${dateStr}` : ''}
+            {last ? `${t.logs.last} · ${dateStr}` : ''}
           </span>
           {last && (
             <button
               type="button"
               onClick={() => setShowAvg((v) => !v)}
-              aria-label={showAvg ? 'Hide averages' : 'Show averages'}
+              aria-label={showAvg ? t.logs.hideAvg : t.logs.showAvg}
               className={cn(
                 'shrink-0 rounded p-0.5 transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -422,7 +406,7 @@ function ReferencePanel({
               <span className="font-semibold tabular-nums text-foreground">
                 {last.average.weight_kg.toFixed(1)}
               </span>
-              <span className="text-muted-foreground"> avg kg</span>
+              <span className="text-muted-foreground"> {t.logs.avgKg}</span>
             </span>
           )}
           {last.average.reps != null && (
@@ -430,7 +414,7 @@ function ReferencePanel({
               <span className="font-semibold tabular-nums text-foreground">
                 {last.average.reps.toFixed(1)}
               </span>
-              <span className="text-muted-foreground"> avg reps</span>
+              <span className="text-muted-foreground"> {t.logs.avgReps}</span>
             </span>
           )}
           {last.average.rpe != null && (
@@ -460,37 +444,39 @@ interface ExerciseBlockProps {
   sessionId: string
   onStartRest: () => void
   onLogSet?: (setSeconds: number) => void
+  demoVideoUrl?: string | null
 }
 
-function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet }: ExerciseBlockProps) {
+function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet, demoVideoUrl }: ExerciseBlockProps) {
+  const { t } = useI18n()
   const [showAddSet, setShowAddSet] = useState(false)
+  const [showVideo, setShowVideo] = useState(false)
   const deleteExercise = useDeleteExercise(sessionId)
   const { data: lastSession } = useExerciseLastSession(exercise.exercise_id)
 
   const name = exercise.exercise_name_free ?? `Exercise #${exercise.position + 1}`
 
   return (
+    <>
     <div className="rounded-xl border border-border bg-card p-5">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">{name}</h3>
         <div className="flex items-center gap-0.5">
+          {demoVideoUrl && (
+            <button
+              type="button"
+              aria-label={`${t.training.watchDemo}: ${name}`}
+              onClick={() => setShowVideo(true)}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+            >
+              <Play className="size-3.5 shrink-0" aria-hidden />
+              {t.training.watchDemo}
+            </button>
+          )}
           <button
             type="button"
-            aria-label="Start rest timer"
-            onClick={onStartRest}
-            className={cn(
-              'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors',
-              'hover:bg-secondary hover:text-foreground',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            )}
-          >
-            <Timer className="size-3.5 shrink-0" aria-hidden />
-            Rest
-          </button>
-          <button
-            type="button"
-            aria-label={`Remove ${name}`}
+            aria-label={`${t.logs.removeExercise}: ${name}`}
             disabled={deleteExercise.isPending}
             onClick={() => deleteExercise.mutate(exercise.id)}
             className={cn(
@@ -543,7 +529,7 @@ function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet }: ExerciseB
             className="mt-2 flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronUp className="size-3" aria-hidden />
-            Done adding sets
+            {t.logs.doneAddingSets}
           </button>
         </div>
       ) : (
@@ -553,10 +539,14 @@ function ExerciseBlock({ exercise, sessionId, onStartRest, onLogSet }: ExerciseB
           className="flex items-center gap-1.5 text-xs font-semibold text-primary transition-opacity hover:opacity-70"
         >
           <Plus className="size-3" aria-hidden />
-          Add set
+          {t.logs.addSet}
         </button>
       )}
     </div>
+    {showVideo && demoVideoUrl && (
+      <ExerciseVideoModal url={demoVideoUrl} exerciseName={name} onClose={() => setShowVideo(false)} />
+    )}
+    </>
   )
 }
 
@@ -569,6 +559,7 @@ interface SetRowProps {
 }
 
 function SetRow({ set, sessionId, exerciseId }: SetRowProps) {
+  const { t } = useI18n()
   const deleteSet = useDeleteSet(sessionId, exerciseId, set.id)
 
   return (
@@ -582,7 +573,7 @@ function SetRow({ set, sessionId, exerciseId }: SetRowProps) {
       </span>
       <button
         type="button"
-        aria-label="Remove this set"
+        aria-label={t.logs.removeSet}
         disabled={deleteSet.isPending}
         onClick={() => deleteSet.mutate()}
         className={cn(
@@ -620,30 +611,10 @@ const DAY_TAG_GROUPS: Record<string, string[]> = {
   cardio:    ['core', 'full_body'],
 }
 
-const TAG_LABEL: Record<string, string> = {
-  push: 'Push', pull: 'Pull', chest: 'Chest', back: 'Back',
-  shoulders: 'Shoulders', arms: 'Arms', legs: 'Legs', glutes: 'Glutes',
-  core: 'Core', upper: 'Upper', lower: 'Lower', full_body: 'Full Body',
-  cardio: 'Cardio', custom: 'Custom',
-}
-
 const ALL_DAY_TAGS: DayTag[] = [
   'push', 'pull', 'chest', 'back', 'shoulders', 'arms',
   'legs', 'glutes', 'core', 'upper', 'lower', 'full_body', 'cardio', 'custom',
 ]
-
-const MUSCLE_LABEL: Record<string, string> = {
-  chest: 'Chest', back: 'Back', shoulders: 'Shoulders',
-  biceps: 'Biceps', triceps: 'Triceps', core: 'Core',
-  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes',
-  calves: 'Calves', full_body: 'Full Body', forearms: 'Forearms',
-}
-
-const EQUIPMENT_LABEL: Record<string, string> = {
-  barbell: 'Barbell', dumbbell: 'Dumbbell', machine: 'Machine',
-  cable: 'Cable', bodyweight: 'Bodyweight', kettlebell: 'Kettlebell',
-  bands: 'Bands', other: 'Other',
-}
 
 interface AddExerciseDrawerProps {
   sessionId: string
@@ -653,6 +624,7 @@ interface AddExerciseDrawerProps {
 }
 
 function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDrawerProps) {
+  const { t } = useI18n()
   const groups: string[] = dayTag ? (DAY_TAG_GROUPS[dayTag] ?? []) : []
 
   const [query, setQuery] = useState('')
@@ -739,11 +711,11 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
 
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-1">
-          <h2 className="text-base font-semibold text-foreground">Add exercise</h2>
+          <h2 className="text-base font-semibold text-foreground">{t.logs.addExercise}</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t.common.close}
             className={cn(
               'rounded-lg p-1.5 text-muted-foreground transition-colors',
               'hover:bg-secondary hover:text-foreground',
@@ -764,11 +736,11 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
             <Input
               ref={searchRef}
               type="text"
-              placeholder="Search exercise catalog…"
+              placeholder={t.logs.searchCatalog}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9 pr-9"
-              aria-label="Search exercises"
+              aria-label={t.logs.searchCatalog}
             />
           </div>
         </div>
@@ -778,7 +750,7 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
           <div
             className="flex shrink-0 gap-2 overflow-x-auto px-5 pb-3"
             role="group"
-            aria-label="Filter by muscle group"
+            aria-label={t.logs.filterByMuscle}
           >
             {groups.map((g) => (
               <button
@@ -794,7 +766,7 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
                     : 'bg-secondary text-foreground hover:bg-secondary/70',
                 )}
               >
-                {MUSCLE_LABEL[g] ?? g}
+                {(t.training.muscleGroups as Record<string, string>)[g] ?? g}
               </button>
             ))}
           </div>
@@ -807,18 +779,19 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
               {exercises.map((ex) => {
                 const isAdding = addingId === ex.id
                 return (
-                  <li key={ex.id} role="option" aria-selected={false}>
+                  <li key={ex.id} role="option" aria-selected={false} className="flex items-center">
                     <button
                       type="button"
                       disabled={!!addingId || addingCustom}
                       onClick={() => {
                         // Include equipment so "Bench Press (Barbell)" and
                         // "Bench Press (Dumbbell)" are distinct on the workout card.
-                        const label = `${ex.name} (${EQUIPMENT_LABEL[ex.equipment] ?? ex.equipment})`
+                        const eqLabel = (t.training.equipment as Record<string, string>)[ex.equipment] ?? ex.equipment
+                        const label = `${ex.name} (${eqLabel})`
                         addFromCatalog(ex.id, label)
                       }}
                       className={cn(
-                        'group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors',
+                        'group flex flex-1 items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
                         'disabled:pointer-events-none',
                         isAdding ? 'bg-primary/8' : 'hover:bg-secondary/80 active:bg-secondary',
@@ -836,7 +809,7 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
                       >
                         {isAdding
                           ? <Loader2 className="size-4 animate-spin" />
-                          : EQUIPMENT_LABEL[ex.equipment]?.slice(0, 2) ?? '??'
+                          : ((t.training.equipment as Record<string, string>)[ex.equipment] ?? ex.equipment).slice(0, 2)
                         }
                       </div>
 
@@ -844,9 +817,9 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
                         <p className="text-[11px] text-muted-foreground">
-                          {EQUIPMENT_LABEL[ex.equipment] ?? ex.equipment}
+                          {(t.training.equipment as Record<string, string>)[ex.equipment] ?? ex.equipment}
                           <span className="mx-1.5 text-border">·</span>
-                          {MUSCLE_LABEL[ex.muscle_group] ?? ex.muscle_group}
+                          {(t.training.muscleGroups as Record<string, string>)[ex.muscle_group] ?? ex.muscle_group}
                         </p>
                       </div>
 
@@ -855,43 +828,46 @@ function AddExerciseDrawer({ sessionId, dayTag, open, onClose }: AddExerciseDraw
                         <ChevronRight className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" aria-hidden />
                       )}
                     </button>
+                    {ex.demo_video_url && (
+                      <VideoPreviewButton url={ex.demo_video_url} name={ex.name} />
+                    )}
                   </li>
                 )
               })}
             </ul>
           ) : isSearching ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">
-              No results for &ldquo;{query.trim()}&rdquo; — try the custom field below.
+              {t.logs.noResultsFor} &ldquo;{query.trim()}&rdquo; — {t.logs.searchAboveOrCustom}
             </p>
           ) : groups.length === 0 ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">
-              Search above or add a custom exercise below.
+              {t.logs.searchAboveOrCustom}
             </p>
           ) : null}
         </div>
 
         {/* ── Custom exercise ── always visible ─────────────────────────────── */}
-        <div className="shrink-0 border-t border-border bg-background px-5 py-4">
+        <div className="shrink-0 border-t border-border bg-background px-5 pb-20 pt-4 lg:pb-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Custom exercise
+            {t.logs.customExercise}
           </p>
           <div className="flex gap-2">
             <Input
               ref={customRef}
               type="text"
-              placeholder="e.g. Smith machine squat, cable fly…"
+              placeholder={t.logs.customExercisePlaceholder}
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addCustom() }}
               disabled={addingCustom || !!addingId}
-              aria-label="Custom exercise name"
+              aria-label={t.logs.customExercise}
               className="flex-1"
             />
             <Button
               size="icon"
               disabled={!customName.trim() || addingCustom || !!addingId}
               onClick={addCustom}
-              aria-label="Add custom exercise"
+              aria-label={t.logs.addCustomExercise}
               className="shrink-0"
             >
               {addingCustom
@@ -915,6 +891,7 @@ interface DiscardDialogProps {
 }
 
 function DiscardDialog({ sessionId, open, onClose }: DiscardDialogProps) {
+  const { t } = useI18n()
   const router = useRouter()
   const discard = useDiscardSession(sessionId)
 
@@ -934,15 +911,15 @@ function DiscardDialog({ sessionId, open, onClose }: DiscardDialogProps) {
         role="alertdialog"
         aria-modal="true"
         aria-label="Discard workout"
-        className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-border bg-background p-5 shadow-xl sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-sm sm:-translate-x-1/2"
+        className="fixed inset-x-4 bottom-20 z-50 rounded-2xl border border-border bg-background p-5 shadow-xl lg:bottom-4 sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-sm sm:-translate-x-1/2"
       >
-        <h2 className="text-base font-semibold text-foreground">Discard workout?</h2>
+        <h2 className="text-base font-semibold text-foreground">{t.logs.discardWorkout}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          This will permanently delete this session and all logged sets. You cannot undo this.
+          {t.logs.discardConfirm}
         </p>
         <div className="mt-5 flex gap-2.5">
           <Button variant="outline" className="flex-1" onClick={onClose}>
-            Keep it
+            {t.logs.keepIt}
           </Button>
           <Button
             variant="destructive"
@@ -955,9 +932,9 @@ function DiscardDialog({ sessionId, open, onClose }: DiscardDialogProps) {
             }
           >
             {discard.isPending ? (
-              <><Loader2 className="size-4 animate-spin" aria-hidden />Discarding…</>
+              <><Loader2 className="size-4 animate-spin" aria-hidden />{t.logs.discarding}</>
             ) : (
-              'Discard'
+              t.logs.discard
             )}
           </Button>
         </div>
@@ -976,6 +953,7 @@ interface TagPickerDrawerProps {
 }
 
 function TagPickerDrawer({ sessionId, currentTag, open, onClose }: TagPickerDrawerProps) {
+  const { t } = useI18n()
   const update = useUpdateSession(sessionId)
 
   useEffect(() => {
@@ -1005,11 +983,11 @@ function TagPickerDrawer({ sessionId, currentTag, open, onClose }: TagPickerDraw
           <div className="h-1 w-10 rounded-full bg-border" aria-hidden />
         </div>
         <div className="flex items-center justify-between px-5 pb-3 pt-1">
-          <h2 className="text-base font-semibold text-foreground">Change day tag</h2>
+          <h2 className="text-base font-semibold text-foreground">{t.logs.changeDayTag}</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t.common.close}
             className={cn(
               'rounded-lg p-1.5 text-muted-foreground transition-colors',
               'hover:bg-secondary hover:text-foreground',
@@ -1019,7 +997,7 @@ function TagPickerDrawer({ sessionId, currentTag, open, onClose }: TagPickerDraw
             <X className="size-4" aria-hidden />
           </button>
         </div>
-        <div className="flex flex-wrap gap-2.5 px-5 pb-8">
+        <div className="flex flex-wrap gap-2.5 px-5 pb-20 lg:pb-8">
           {ALL_DAY_TAGS.map((tag) => (
             <button
               key={tag}
@@ -1036,7 +1014,7 @@ function TagPickerDrawer({ sessionId, currentTag, open, onClose }: TagPickerDraw
                   : 'bg-secondary text-foreground hover:bg-secondary/70',
               )}
             >
-              {TAG_LABEL[tag] ?? tag}
+              {(t.logs.dayTags as Record<string, string>)[tag] ?? tag}
             </button>
           ))}
         </div>
@@ -1060,6 +1038,7 @@ function LinkProgramDrawer({
   open,
   onClose,
 }: LinkProgramDrawerProps) {
+  const { t } = useI18n()
   const update = useUpdateSession(sessionId)
   const { data: programs = [], isLoading } = usePrograms()
 
@@ -1099,11 +1078,11 @@ function LinkProgramDrawer({
 
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-1">
-          <h2 className="text-base font-semibold text-foreground">Link to program</h2>
+          <h2 className="text-base font-semibold text-foreground">{t.logs.linkToProgram}</h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t.common.close}
             className={cn(
               'rounded-lg p-1.5 text-muted-foreground transition-colors',
               'hover:bg-secondary hover:text-foreground',
@@ -1125,9 +1104,9 @@ function LinkProgramDrawer({
           ) : programs.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <ClipboardList className="size-10 text-muted-foreground/40" aria-hidden />
-              <p className="font-semibold text-foreground">No programs yet</p>
+              <p className="font-semibold text-foreground">{t.training.noPrograms}</p>
               <p className="text-sm text-muted-foreground">
-                Create a training program first, then link your sessions to it.
+                {t.logs.noProgramsYetLinkDesc}
               </p>
             </div>
           ) : (
@@ -1138,7 +1117,7 @@ function LinkProgramDrawer({
                     {program.name}
                   </p>
                   {program.days.length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-1">No days added yet.</p>
+                    <p className="text-xs text-muted-foreground px-1">{t.training.noDays}</p>
                   ) : (
                     <div className="flex flex-col gap-1">
                       {program.days.map((day) => {
@@ -1177,7 +1156,7 @@ function LinkProgramDrawer({
                                   : 'bg-secondary text-muted-foreground',
                               )}
                             >
-                              {TAG_LABEL[day.day_tag] ?? day.day_tag}
+                              {(t.logs.dayTags as Record<string, string>)[day.day_tag] ?? day.day_tag}
                             </span>
                             {isSelected && update.isPending ? (
                               <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
@@ -1200,7 +1179,7 @@ function LinkProgramDrawer({
 
         {/* Unlink footer */}
         {isLinked && (
-          <div className="shrink-0 border-t border-border px-5 py-3">
+          <div className="shrink-0 border-t border-border px-5 pb-20 pt-3 lg:pb-3">
             <button
               type="button"
               disabled={update.isPending}
@@ -1211,7 +1190,7 @@ function LinkProgramDrawer({
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
             >
-              {update.isPending ? 'Removing…' : 'Remove program link'}
+              {update.isPending ? t.logs.removingProgramLink : t.logs.removeProgramLink}
             </button>
           </div>
         )}
@@ -1229,6 +1208,7 @@ interface FinishDialogProps {
 }
 
 function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
+  const { t } = useI18n()
   const router = useRouter()
   const [difficulty, setDifficulty] = useState<number | ''>('')
   const [notes, setNotes] = useState('')
@@ -1275,11 +1255,11 @@ function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Finish workout"
-        className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-border bg-background p-5 shadow-xl sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-sm sm:-translate-x-1/2"
+        className="fixed inset-x-4 bottom-20 z-50 rounded-2xl border border-border bg-background p-5 shadow-xl lg:bottom-4 sm:inset-x-auto sm:left-1/2 sm:w-full sm:max-w-sm sm:-translate-x-1/2"
       >
-        <h2 className="text-base font-semibold text-foreground">Finish workout?</h2>
+        <h2 className="text-base font-semibold text-foreground">{t.logs.finishWorkout}</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          How did it go? These fields are optional.
+          {t.logs.finishOptionalFields}
         </p>
 
         <div className="mt-4 flex flex-col gap-4">
@@ -1289,8 +1269,8 @@ function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
               htmlFor="difficulty"
               className="flex items-center gap-1 text-xs font-semibold text-foreground"
             >
-              Perceived difficulty
-              <span className="font-normal text-muted-foreground">(1 = easy, 10 = max)</span>
+              {t.logs.perceivedDifficulty}
+              <span className="font-normal text-muted-foreground">{t.logs.difficultyHint}</span>
             </label>
             <Input
               id="difficulty"
@@ -1314,11 +1294,11 @@ function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
               htmlFor="finish-notes"
               className="text-xs font-semibold text-foreground"
             >
-              Session notes
+              {t.logs.sessionNotes}
             </label>
             <textarea
               id="finish-notes"
-              placeholder="e.g. Great session, PR on bench press"
+              placeholder={t.logs.sessionNotesPlaceholder}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
@@ -1334,7 +1314,7 @@ function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
 
         <div className="mt-5 flex gap-2.5">
           <Button variant="outline" className="flex-1" onClick={onClose}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             className="flex-1"
@@ -1344,10 +1324,10 @@ function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
             {finish.isPending ? (
               <>
                 <Loader2 className="size-4 animate-spin" aria-hidden />
-                Saving…
+                {t.logs.finishing}
               </>
             ) : (
-              'Finish Workout'
+              t.logs.finishButton
             )}
           </Button>
         </div>
@@ -1446,13 +1426,13 @@ export default function ActiveSessionPage({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
         <Dumbbell className="size-12 text-muted-foreground/40" aria-hidden />
-        <p className="text-base font-semibold text-foreground">Session not found</p>
+        <p className="text-base font-semibold text-foreground">{t.logs.sessionNotFound}</p>
         <p className="text-sm text-muted-foreground">
-          This workout session doesn&apos;t exist or has been removed.
+          {t.logs.sessionNotFoundDesc}
         </p>
         <Button variant="outline" onClick={() => router.push('/logs')}>
           <ArrowLeft className="size-4" aria-hidden />
-          Back to logs
+          {t.logs.backToLogs}
         </Button>
       </div>
     )
@@ -1483,7 +1463,9 @@ export default function ActiveSessionPage({
               <button
                 type="button"
                 onClick={() => setTagPickerOpen(true)}
-                aria-label={session.day_tag ? `Day tag: ${TAG_LABEL[session.day_tag]}. Tap to change` : 'Add day tag'}
+                aria-label={session.day_tag
+                  ? (t.logs.dayTags as Record<string, string>)[session.day_tag] ?? session.day_tag
+                  : t.logs.addTag}
                 className={cn(
                   'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -1492,14 +1474,16 @@ export default function ActiveSessionPage({
                     : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                {session.day_tag ? TAG_LABEL[session.day_tag] : '+ Add tag'}
+                {session.day_tag
+                  ? (t.logs.dayTags as Record<string, string>)[session.day_tag] ?? session.day_tag
+                  : t.logs.addTag}
               </button>
 
               {/* Program link chip — opens program picker */}
               <button
                 type="button"
                 onClick={() => setLinkProgramOpen(true)}
-                aria-label={linkedDay ? `Linked to ${linkedDay.name}. Tap to change` : 'Link to a program day'}
+                aria-label={linkedDay ? linkedDay.name : t.logs.linkProgram}
                 className={cn(
                   'flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -1509,7 +1493,7 @@ export default function ActiveSessionPage({
                 )}
               >
                 <ClipboardList className="size-3 shrink-0" aria-hidden />
-                {linkedDay ? linkedDay.name : 'Link program'}
+                {linkedDay ? linkedDay.name : t.logs.linkProgram}
               </button>
             </div>
           </div>
@@ -1519,45 +1503,61 @@ export default function ActiveSessionPage({
             variant="ghost"
             size="sm"
             onClick={() => setDiscardOpen(true)}
-            aria-label="Discard this workout"
+            aria-label={t.logs.discardSession}
             className="text-muted-foreground hover:text-destructive"
           >
-            Discard
+            {t.logs.discardSession}
           </Button>
           <Button
             size="sm"
             onClick={() => setFinishOpen(true)}
-            aria-label="Finish this workout"
+            aria-label={t.logs.finishSession}
           >
-            Finish
+            {t.logs.finishSession}
           </Button>
         </div>
       </header>
 
       {/* ── Metrics strip — elapsed / working / resting / volume ────────────── */}
-      <div className="flex shrink-0 gap-5 overflow-x-auto border-b border-border bg-background/60 px-6 py-2 text-xs text-muted-foreground [scrollbar-width:none]">
+      <div className="flex shrink-0 items-center gap-5 overflow-x-auto border-b border-border bg-background/60 px-6 py-2 text-xs text-muted-foreground [scrollbar-width:none]">
         <div className="shrink-0 text-center">
           <p className="font-semibold tabular-nums text-foreground">{formatCountUp(sessionSeconds)}</p>
-          <p className="text-[10px] uppercase tracking-wide">Elapsed</p>
+          <p className="text-[10px] uppercase tracking-wide">{t.logs.elapsed}</p>
         </div>
         <div className="shrink-0 text-center">
           <p className="font-semibold tabular-nums text-foreground">{formatCountUp(workingTime)}</p>
-          <p className="text-[10px] uppercase tracking-wide">Working</p>
+          <p className="text-[10px] uppercase tracking-wide">{t.logs.working}</p>
         </div>
         <div className="shrink-0 text-center">
           <p className="font-semibold tabular-nums text-foreground">{formatCountUp(totalRest)}</p>
-          <p className="text-[10px] uppercase tracking-wide">Resting</p>
+          <p className="text-[10px] uppercase tracking-wide">{t.logs.resting}</p>
         </div>
         {totalLoggedWorkSeconds > 0 && (
           <div className="shrink-0 text-center">
             <p className="font-semibold tabular-nums text-foreground">{formatCountUp(totalLoggedWorkSeconds)}</p>
-            <p className="text-[10px] uppercase tracking-wide">Logged sets</p>
+            <p className="text-[10px] uppercase tracking-wide">{t.logs.loggedSets}</p>
           </div>
         )}
         <div className="shrink-0 text-center">
           <p className="font-semibold tabular-nums text-foreground">{formatVolume(volume)}</p>
-          <p className="text-[10px] uppercase tracking-wide">Volume</p>
+          <p className="text-[10px] uppercase tracking-wide">{t.logs.totalVolume}</p>
         </div>
+        {/* Rest timer trigger — lives here so its purpose (session-level timing) is clear */}
+        <button
+          type="button"
+          onClick={() => setRestStartedAt(new Date())}
+          aria-label={t.logs.startRest}
+          className={cn(
+            'ml-auto shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            restStartedAt
+              ? 'bg-primary/10 text-primary'
+              : 'bg-secondary text-foreground hover:bg-secondary/70',
+          )}
+        >
+          <Timer className="size-3.5 shrink-0" aria-hidden />
+          {t.logs.startRest}
+        </button>
       </div>
 
       {/* ── Rest timer banner ────────────────────────────────────────────────── */}
@@ -1578,9 +1578,9 @@ export default function ActiveSessionPage({
         {session.logged_exercises.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <Dumbbell className="size-10 text-muted-foreground/40" aria-hidden />
-            <p className="font-semibold text-foreground">No exercises yet</p>
+            <p className="font-semibold text-foreground">{t.logs.noExercisesYet}</p>
             <p className="text-sm text-muted-foreground">
-              Tap &ldquo;Add Exercise&rdquo; below to start logging sets.
+              {t.logs.noExercisesYetDesc}
             </p>
           </div>
         ) : (
@@ -1593,6 +1593,7 @@ export default function ActiveSessionPage({
               onLogSet={(dur) => {
                 if (dur > 0) setTotalLoggedWorkSeconds((prev) => prev + dur)
               }}
+              demoVideoUrl={ex.demo_video_url}
             />
           ))
         )}
