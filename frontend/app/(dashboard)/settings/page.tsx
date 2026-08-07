@@ -508,6 +508,59 @@ function PendingInvitesSection() {
   )
 }
 
+// ── Trainer org read-only card ────────────────────────────────────────────────
+
+function TrainerOrgCard() {
+  const { t } = useI18n()
+  const { data: org, isLoading } = useMyOrganization()
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">{t.common.loading}</p>
+  if (!org) return <p className="text-sm text-muted-foreground">{t.settings.noOrg}</p>
+
+  const fields: { label: string; value: string | null | undefined }[] = [
+    { label: t.settings.orgName, value: org.name },
+    { label: t.settings.phone, value: org.phone },
+    { label: t.settings.contactEmail, value: org.contact_email },
+    { label: t.settings.website, value: org.website },
+    {
+      label: t.settings.addressStreet,
+      value: [org.address_street, org.address_city, org.address_state, org.address_zip]
+        .filter(Boolean)
+        .join(', ') || null,
+    },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <dl className="space-y-3">
+        {fields.map(({ label, value }) =>
+          value ? (
+            <div key={label}>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {label}
+              </dt>
+              <dd className="mt-1 text-sm text-foreground">{value}</dd>
+            </div>
+          ) : null,
+        )}
+      </dl>
+
+      {org.join_code && (
+        <>
+          <div className="h-px bg-border" />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.settings.joinCode}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t.settings.joinCodeDesc}</p>
+          </div>
+          <JoinCodeDisplay code={org.join_code} t={t} />
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Athlete org read-only card ────────────────────────────────────────────────
 
 function AthleteOrgCard() {
@@ -582,7 +635,7 @@ export default function SettingsPage() {
   const { t } = useI18n()
   const role = useRole()
   const user = useAuthStore((s) => s.user)
-  const canEditOrg = role === 'trainer' || role === 'gym_admin'
+  const canEditOrg = role === 'gym_admin'
   const isLinkedAthlete = role === 'athlete' && !!user?.organization_id
 
   return (
@@ -602,6 +655,12 @@ export default function SettingsPage() {
       {canEditOrg && (
         <Section title={t.settings.organization} description={t.settings.orgDesc}>
           <OrgForm />
+        </Section>
+      )}
+
+      {role === 'trainer' && (
+        <Section title={t.settings.organization} description={t.settings.orgReadOnlyDesc}>
+          <TrainerOrgCard />
         </Section>
       )}
 

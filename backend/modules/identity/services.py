@@ -111,8 +111,8 @@ class IdentityService:
         return OrganizationResponse.model_validate(org)
 
     async def update_my_organization(self, user: CurrentUser, data: OrganizationUpdate) -> OrganizationResponse:
-        if user.get("role") not in Role.STAFF:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers and gym admins can update organization details")
+        if user.get("role") != Role.GYM_ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can update organization details")
         org_id = self._org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "You are not part of any organization")

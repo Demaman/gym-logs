@@ -163,7 +163,7 @@ async def test_get_my_organization_no_token_returns_401(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
-async def test_update_organization_as_trainer(client: AsyncClient) -> None:
+async def test_update_organization_as_trainer_returns_403(client: AsyncClient) -> None:
     org_id = await _make_org(client, "UpdateOrg Gym")
     await _register(client, org_id, email="orgtrainer@test.com", role="trainer")
     token = await _login(client, "orgtrainer@test.com")
@@ -173,11 +173,7 @@ async def test_update_organization_as_trainer(client: AsyncClient) -> None:
         json={"phone": "11999999999", "website": "https://gym.example.com"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["phone"] == "11999999999"
-    assert data["website"] == "https://gym.example.com"
-    assert data["name"] == "UpdateOrg Gym"
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

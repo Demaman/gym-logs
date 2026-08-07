@@ -259,7 +259,7 @@ export const ptBR = {
     currentPassword: 'Senha atual', newPassword: 'Nova senha',
     updatePassword: 'Atualizar senha',
     saving: 'Salvando…', emailSaved: 'E-mail atualizado', passwordChanged: 'Senha alterada',
-    organization: 'Organização', orgDesc: 'Atualize os dados da sua organização',
+    organization: 'Organização', orgDesc: 'Atualize os dados da sua organização', orgReadOnlyDesc: 'Informações da sua academia.',
     orgName: 'Nome da organização', cnpj: 'CNPJ', phone: 'Telefone',
     contactEmail: 'E-mail de contato', website: 'Website',
     addressStreet: 'Rua', addressCity: 'Cidade',

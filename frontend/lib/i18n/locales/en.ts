@@ -262,7 +262,7 @@ export const en = {
     currentPassword: 'Current password', newPassword: 'New password',
     updatePassword: 'Update password',
     saving: 'Saving…', emailSaved: 'Email updated', passwordChanged: 'Password changed',
-    organization: 'Organization', orgDesc: 'Update your organization details',
+    organization: 'Organization', orgDesc: 'Update your organization details', orgReadOnlyDesc: 'Your gym information.',
     orgName: 'Organization name', cnpj: 'CNPJ', phone: 'Phone',
     contactEmail: 'Contact email', website: 'Website',
     addressStreet: 'Street', addressCity: 'City',
