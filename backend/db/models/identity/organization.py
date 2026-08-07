@@ -29,6 +29,7 @@ class Organization(Base):
     address_state: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address_zip: Mapped[str | None] = mapped_column(String(10), nullable=True)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    plan: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pro")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

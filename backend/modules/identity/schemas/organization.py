@@ -40,6 +40,7 @@ class OrganizationResponse(BaseModel):
     address_state: str | None = None
     address_zip: str | None = None
     website: str | None = None
+    plan: str = "free"
     created_at: datetime
 
     model_config = {"from_attributes": True}
