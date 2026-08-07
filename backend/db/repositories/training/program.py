@@ -58,17 +58,23 @@ class ProgramRepository:
         return list(result.scalars().all())
 
     async def list_for_athlete(
-        self, athlete_id: uuid.UUID, organization_id: uuid.UUID | None
+        self,
+        athlete_id: uuid.UUID,
+        organization_id: uuid.UUID | None,
+        limit: int | None = None,
     ) -> list[Program]:
         stmt = (
             select(Program)
             .options(*_with_days())
             .where(Program.athlete_id == athlete_id, Program.is_active.is_(True))
+            .order_by(Program.created_at.desc())
         )
         if organization_id is not None:
             stmt = stmt.where(Program.organization_id == organization_id)
         else:
             stmt = stmt.where(Program.organization_id.is_(None))
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await self._s.execute(stmt)
         return list(result.scalars().all())
 
@@ -100,6 +106,7 @@ class ProgramRepository:
         athlete_id: uuid.UUID | None,
         name: str,
         description: str | None,
+        guidelines: str | None = None,
         mode: str,
         created_by_id: uuid.UUID,
     ) -> Program:
@@ -108,6 +115,7 @@ class ProgramRepository:
             athlete_id=athlete_id,
             name=name,
             description=description,
+            guidelines=guidelines,
             mode=mode,
             created_by_id=created_by_id,
         )

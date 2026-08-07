@@ -29,6 +29,7 @@ class Program(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidelines: Mapped[str | None] = mapped_column(Text, nullable=True)
     mode: Mapped[str] = mapped_column(
         Enum(*SessionMode.ALL, name="session_mode", schema=SCHEMA),
         nullable=False,

@@ -12,6 +12,7 @@ SessionModeLiteral = Literal["on_the_fly", "program_driven"]
 class ProgramCreate(BaseModel):
     name: str
     description: str | None = None
+    guidelines: str | None = None
     mode: SessionModeLiteral = "on_the_fly"
     athlete_id: uuid.UUID | None = None
 
@@ -19,6 +20,7 @@ class ProgramCreate(BaseModel):
 class ProgramUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    guidelines: str | None = None
     mode: SessionModeLiteral | None = None
     athlete_id: uuid.UUID | None = None
 
@@ -33,6 +35,7 @@ class ProgramResponse(BaseModel):
     athlete_id: uuid.UUID | None
     name: str
     description: str | None
+    guidelines: str | None
     mode: str
     is_active: bool
     created_at: datetime
