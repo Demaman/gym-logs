@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.events import publish
 from db.constants.training import COUNTS_VOLUME_DEFAULT
+from db.repositories.identity import UserRepository
 from db.repositories.logs import (
     LoggedExerciseRepository,
     LoggedSetRepository,
@@ -388,6 +389,79 @@ class SessionService:
         raw = await self._session_repo.get_exercise_history(
             organization_id=org_id,
             athlete_id=user_id,
+            catalog_exercise_id=catalog_exercise_id,
+        )
+        exercise = await self._exercise_repo.get_by_id(catalog_exercise_id)
+        return ExerciseHistorySeries(
+            exercise_name=exercise.name if exercise else None,
+            points=[ExerciseHistoryPoint(**r) for r in raw],
+        )
+
+
+class TrainerLogService(SessionService):
+    """Trainer/gym-admin read access to any athlete's log data within the org."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(session)
+        self._user_repo = UserRepository(session)
+
+    async def _ensure_access(self, current_user: dict, athlete_id: uuid.UUID) -> None:
+        role = current_user.get("role")
+        if role not in ("trainer", "gym_admin"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers can view athlete data")
+        _, trainer_org = self._ids(current_user)
+        if trainer_org is not None:
+            athlete = await self._user_repo.get_by_id(athlete_id)
+            if athlete is None or athlete.organization_id != trainer_org:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Athlete is not in your organization")
+
+    async def list_athlete_sessions(
+        self,
+        current_user: dict,
+        athlete_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[WorkoutSessionResponse]:
+        await self._ensure_access(current_user, athlete_id)
+        _, org_id = self._ids(current_user)
+        sessions = await self._session_repo.list_for_athlete(
+            organization_id=org_id, athlete_id=athlete_id, limit=limit, offset=offset
+        )
+        results = []
+        for ws in sessions:
+            exercises, summary = await self._build_summary(ws.id)
+            results.append(self._to_response(ws, exercises, summary))
+        return results
+
+    async def get_athlete_stats(
+        self, current_user: dict, athlete_id: uuid.UUID
+    ) -> ProgressStats:
+        await self._ensure_access(current_user, athlete_id)
+        _, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_progress_stats(
+            organization_id=org_id, athlete_id=athlete_id
+        )
+        return ProgressStats(**raw)
+
+    async def get_athlete_weekly_volume(
+        self, current_user: dict, athlete_id: uuid.UUID, *, weeks: int
+    ) -> WeeklyVolumeSeries:
+        await self._ensure_access(current_user, athlete_id)
+        _, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_weekly_volume(
+            organization_id=org_id, athlete_id=athlete_id, weeks=weeks
+        )
+        return WeeklyVolumeSeries(points=[WeeklyVolumePoint(**r) for r in raw])
+
+    async def get_athlete_exercise_history(
+        self, current_user: dict, athlete_id: uuid.UUID, catalog_exercise_id: uuid.UUID
+    ) -> ExerciseHistorySeries:
+        await self._ensure_access(current_user, athlete_id)
+        _, org_id = self._ids(current_user)
+        raw = await self._session_repo.get_exercise_history(
+            organization_id=org_id,
+            athlete_id=athlete_id,
             catalog_exercise_id=catalog_exercise_id,
         )
         exercise = await self._exercise_repo.get_by_id(catalog_exercise_id)

@@ -19,13 +19,17 @@ from modules.logs.schemas import (
     WorkoutSessionResponse,
 )
 from modules.logs.schemas.session import UpdateSessionRequest
-from modules.logs.services import ExerciseLogService, SessionService, SetLogService
+from modules.logs.services import ExerciseLogService, SessionService, SetLogService, TrainerLogService
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
 def _session_svc(db: AsyncSession = Depends(get_db)) -> SessionService:
     return SessionService(db)
+
+
+def _trainer_svc(db: AsyncSession = Depends(get_db)) -> TrainerLogService:
+    return TrainerLogService(db)
 
 
 def _ex_svc(db: AsyncSession = Depends(get_db)) -> ExerciseLogService:
@@ -240,3 +244,51 @@ async def delete_set(
     svc: SetLogService = Depends(_set_svc),
 ) -> None:
     await svc.delete_set(current_user, session_id, set_id)
+
+
+# ---------------------------------------------------------------------------
+# Trainer-scoped athlete log endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/athletes/{athlete_id}/sessions", response_model=list[WorkoutSessionResponse])
+async def list_athlete_sessions(
+    athlete_id: uuid.UUID,
+    current_user: CurrentUser,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> list[WorkoutSessionResponse]:
+    return await svc.list_athlete_sessions(current_user, athlete_id, limit=limit, offset=offset)
+
+
+@router.get("/athletes/{athlete_id}/sessions/stats", response_model=ProgressStats)
+async def get_athlete_stats(
+    athlete_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> ProgressStats:
+    return await svc.get_athlete_stats(current_user, athlete_id)
+
+
+@router.get("/athletes/{athlete_id}/sessions/volume-over-time", response_model=WeeklyVolumeSeries)
+async def get_athlete_weekly_volume(
+    athlete_id: uuid.UUID,
+    current_user: CurrentUser,
+    weeks: int = Query(26, ge=4, le=52),
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> WeeklyVolumeSeries:
+    return await svc.get_athlete_weekly_volume(current_user, athlete_id, weeks=weeks)
+
+
+@router.get(
+    "/athletes/{athlete_id}/exercises/{catalog_id}/history",
+    response_model=ExerciseHistorySeries,
+)
+async def get_athlete_exercise_history(
+    athlete_id: uuid.UUID,
+    catalog_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> ExerciseHistorySeries:
+    return await svc.get_athlete_exercise_history(current_user, athlete_id, catalog_id)

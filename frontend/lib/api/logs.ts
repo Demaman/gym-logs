@@ -136,3 +136,44 @@ export async function getExerciseHistory(
   )
   return data
 }
+
+// ── Trainer-scoped athlete log endpoints ─────────────────────────────────────
+
+export async function getAthleteSessionHistory(
+  athleteId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<WorkoutSession[]> {
+  const { data } = await api.get<WorkoutSession[]>(
+    `/api/v1/logs/athletes/${athleteId}/sessions`,
+    { params },
+  )
+  return data
+}
+
+export async function getAthleteProgressStats(athleteId: string): Promise<ProgressStats> {
+  const { data } = await api.get<ProgressStats>(
+    `/api/v1/logs/athletes/${athleteId}/sessions/stats`,
+  )
+  return data
+}
+
+export async function getAthleteWeeklyVolume(
+  athleteId: string,
+  weeks = 26,
+): Promise<WeeklyVolumeSeries> {
+  const { data } = await api.get<WeeklyVolumeSeries>(
+    `/api/v1/logs/athletes/${athleteId}/sessions/volume-over-time`,
+    { params: { weeks } },
+  )
+  return data
+}
+
+export async function getAthleteExerciseHistory(
+  athleteId: string,
+  catalogExerciseId: string,
+): Promise<ExerciseHistorySeries> {
+  const { data } = await api.get<ExerciseHistorySeries>(
+    `/api/v1/logs/athletes/${athleteId}/exercises/${catalogExerciseId}/history`,
+  )
+  return data
+}

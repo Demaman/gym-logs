@@ -9,6 +9,7 @@ import { TrendingUp } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatWeekLabel } from '@/lib/utils'
 import { useMultipleExerciseHistory } from '@/hooks/logs/use-multiple-exercise-history'
+import { useAthleteMultipleExerciseHistory } from '@/hooks/logs/use-athlete-logs'
 
 // Series colors that complement the design system palette
 const SERIES_COLORS = [
@@ -31,16 +32,25 @@ interface SelectedExercise {
 
 interface ExerciseProgressionChartProps {
   exercises: SelectedExercise[]
+  /** When provided, fetches history for this athlete instead of the current user. */
+  athleteId?: string
   emptyPrompt?: string
   emptyNoData?: string
 }
 
 export function ExerciseProgressionChart({
   exercises,
+  athleteId,
   emptyPrompt = 'Select an exercise to view its history',
   emptyNoData = 'No history for these exercises yet.',
 }: ExerciseProgressionChartProps) {
-  const results = useMultipleExerciseHistory(exercises.map((e) => e.id))
+  // Both hooks are always called; only one receives real IDs to avoid conditional hooks.
+  const selfResults = useMultipleExerciseHistory(athleteId ? [] : exercises.map((e) => e.id))
+  const trainerResults = useAthleteMultipleExerciseHistory(
+    athleteId,
+    athleteId ? exercises.map((e) => e.id) : [],
+  )
+  const results = athleteId ? trainerResults : selfResults
 
   const isLoading = results.some((r) => r.isLoading)
 

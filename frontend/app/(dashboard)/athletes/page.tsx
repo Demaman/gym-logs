@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Users, UserPlus, Loader2, MailPlus, Clock, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { Users, UserPlus, Loader2, MailPlus, Clock, Trash2, ChevronRight } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -186,8 +187,11 @@ function MembershipCard({
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
         {emailInitials(membership.athlete_email)}
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">
+      <Link
+        href={`/athletes/${membership.athlete_id}`}
+        className="min-w-0 flex-1 group"
+      >
+        <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
           {membership.athlete_email}
         </p>
         {showTrainer && (
@@ -196,7 +200,13 @@ function MembershipCard({
             <span className="text-foreground/80">{membership.trainer_email}</span>
           </p>
         )}
-      </div>
+        {!showTrainer && (
+          <p className="mt-0.5 text-xs text-muted-foreground group-hover:text-primary/70 transition-colors">
+            {t.athletes.viewProgress}
+          </p>
+        )}
+      </Link>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button
