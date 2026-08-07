@@ -42,12 +42,14 @@ class ProgramExerciseRepository:
         exercise_id: uuid.UUID,
         position: int,
         notes: str | None,
+        demo_video_url: str | None = None,
     ) -> ProgramExercise:
         ex = ProgramExercise(
             program_day_id=program_day_id,
             exercise_id=exercise_id,
             position=position,
             notes=notes,
+            demo_video_url=demo_video_url,
         )
         self._s.add(ex)
         await self._s.commit()

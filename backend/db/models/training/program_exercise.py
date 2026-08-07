@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,7 @@ class ProgramExercise(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    demo_video_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     program_day: Mapped["ProgramDay"] = relationship(back_populates="exercises")
     exercise: Mapped["Exercise"] = relationship()
