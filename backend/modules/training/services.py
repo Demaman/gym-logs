@@ -1,8 +1,11 @@
 import uuid
+from pathlib import Path
 
-from fastapi import HTTPException, status
+import aiofiles
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.events import publish
 from db.repositories.training import (
     ExerciseRepository,
@@ -23,6 +26,7 @@ from modules.training.schemas import (
     ProgramDayUpdate,
     ProgramExerciseCreate,
     ProgramExerciseResponse,
+    ProgramExerciseUpdate,
     ProgramResponse,
     ProgramUpdate,
 )
@@ -78,6 +82,7 @@ class ExerciseService:
             is_global=False,
             created_by_id=user_id,
             notes=data.notes,
+            demo_video_url=data.demo_video_url,
         )
         return ExerciseResponse.model_validate(ex)
 
@@ -99,7 +104,7 @@ class ExerciseService:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "Not authorized to modify this exercise"
             )
-        updates = data.model_dump(exclude_none=True)
+        updates = data.model_dump(exclude_unset=True)
         ex = await self._repo.update(ex, **updates)
         return ExerciseResponse.model_validate(ex)
 
@@ -112,6 +117,63 @@ class ExerciseService:
         ] != "gym_admin":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
         await self._repo.delete(ex)
+
+    _ALLOWED_VIDEO_MIMES = {
+        "video/mp4", "video/webm", "video/ogg", "video/quicktime"
+    }
+    _MIME_TO_EXT = {
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/ogg": ".ogv",
+        "video/quicktime": ".mov",
+    }
+    _MAX_VIDEO_BYTES = 200 * 1024 * 1024  # 200 MB
+
+    async def upload_video(
+        self, current_user: dict, exercise_id: uuid.UUID, file: UploadFile
+    ) -> ExerciseResponse:
+        ex = await self._repo.get_by_id(exercise_id)
+        if not ex:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+        if str(ex.created_by_id) != current_user["user_id"] and current_user[
+            "role"
+        ] != "gym_admin":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
+
+        content_type = (file.content_type or "").split(";")[0].strip().lower()
+        if content_type not in self._ALLOWED_VIDEO_MIMES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Only video files are accepted (mp4, webm, ogg, mov)",
+            )
+
+        ext = self._MIME_TO_EXT[content_type]
+        dest = Path(settings.media_root) / "exercises" / f"{exercise_id}{ext}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        # Stream file while enforcing size cap
+        total = 0
+        async with aiofiles.open(dest, "wb") as out:
+            while chunk := await file.read(1024 * 256):  # 256 KB chunks
+                total += len(chunk)
+                if total > self._MAX_VIDEO_BYTES:
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        "Video must be under 200 MB",
+                    )
+                await out.write(chunk)
+
+        # Remove old local file if it was a different extension
+        for old_ext in self._MIME_TO_EXT.values():
+            if old_ext != ext:
+                old_path = dest.parent / f"{exercise_id}{old_ext}"
+                old_path.unlink(missing_ok=True)
+
+        base = (settings.media_base_url or "").rstrip("/")
+        url = f"{base}/media/exercises/{exercise_id}{ext}"
+        ex = await self._repo.update(ex, demo_video_url=url)
+        return ExerciseResponse.model_validate(ex)
 
 
 class ProgramService:
@@ -144,6 +206,7 @@ class ProgramService:
             athlete_id=athlete_id,
             name=data.name,
             description=data.description,
+            guidelines=data.guidelines,
             mode=data.mode,
             created_by_id=self._user_id(current_user),
         )
@@ -248,32 +311,7 @@ class ProgramService:
                 mode=source.mode,
                 created_by_id=user_id,
             )
-            for day in sorted(source.days, key=lambda d: d.position):
-                new_day = await self._day_repo.create(
-                    program_id=copy.id,
-                    name=day.name,
-                    position=day.position,
-                    day_tag=day.day_tag,
-                )
-                for ex in sorted(day.exercises, key=lambda e: e.position):
-                    new_ex = await self._ex_repo.create(
-                        program_day_id=new_day.id,
-                        exercise_id=ex.exercise_id,
-                        position=ex.position,
-                        notes=ex.notes,
-                    )
-                    for ps in sorted(ex.prescribed_sets, key=lambda s: s.position):
-                        await self._set_repo.create(
-                            program_exercise_id=new_ex.id,
-                            position=ps.position,
-                            set_type=ps.set_type,
-                            rep_min=ps.rep_min,
-                            rep_max=ps.rep_max,
-                            rpe_target=ps.rpe_target,
-                            rest_seconds=ps.rest_seconds,
-                            weight_pct_1rm=ps.weight_pct_1rm,
-                            notes=ps.notes,
-                        )
+            await self._attach_days_from_model(copy.id, source.days)
             full_copy = await self._program_repo.get_by_id_fresh(copy.id)
             if full_copy:
                 await publish(
@@ -288,6 +326,96 @@ class ProgramService:
                 )
                 created.append(ProgramResponse.model_validate(full_copy))
         return created
+
+    async def _attach_days_from_model(self, program_id: uuid.UUID, days) -> None:
+        for day in sorted(days, key=lambda d: d.position):
+            new_day = await self._day_repo.create(
+                program_id=program_id,
+                name=day.name,
+                position=day.position,
+                day_tag=day.day_tag,
+            )
+            for ex in sorted(day.exercises, key=lambda e: e.position):
+                new_ex = await self._ex_repo.create(
+                    program_day_id=new_day.id,
+                    exercise_id=ex.exercise_id,
+                    position=ex.position,
+                    notes=ex.notes,
+                    demo_video_url=ex.demo_video_url,
+                )
+                for ps in sorted(ex.prescribed_sets, key=lambda s: s.position):
+                    await self._set_repo.create(
+                        program_exercise_id=new_ex.id,
+                        position=ps.position,
+                        set_type=ps.set_type,
+                        rep_min=ps.rep_min,
+                        rep_max=ps.rep_max,
+                        rpe_target=ps.rpe_target,
+                        rest_seconds=ps.rest_seconds,
+                        weight_pct_1rm=ps.weight_pct_1rm,
+                        notes=ps.notes,
+                    )
+
+    async def _attach_days_from_dict(
+        self, program_id: uuid.UUID, days: list[dict]
+    ) -> None:
+        for i, day in enumerate(days, start=1):
+            new_day = await self._day_repo.create(
+                program_id=program_id,
+                name=day["name"],
+                position=day.get("position", i),
+                day_tag=("custom" if day.get("day_tag") in (None, "", "rest") else day.get("day_tag")),
+            )
+            for j, ex in enumerate(day.get("exercises", []), start=1):
+                new_ex = await self._ex_repo.create(
+                    program_day_id=new_day.id,
+                    exercise_id=uuid.UUID(ex["exercise_id"]),
+                    position=ex.get("position", j),
+                    notes=ex.get("notes"),
+                )
+                for k, ps in enumerate(ex.get("prescribed_sets", []), start=1):
+                    await self._set_repo.create(
+                        program_exercise_id=new_ex.id,
+                        position=ps.get("position", k),
+                        set_type=ps["set_type"],
+                        rep_min=ps["rep_min"],
+                        rep_max=ps["rep_max"],
+                        rpe_target=ps.get("rpe_target"),
+                        rest_seconds=ps.get("rest_seconds"),
+                        weight_pct_1rm=ps.get("weight_pct_1rm"),
+                        notes=ps.get("notes"),
+                    )
+
+    async def create_full(
+        self,
+        current_user: dict,
+        athlete_id: uuid.UUID,
+        data: dict,
+    ) -> ProgramResponse:
+        org_id = self._org_id(current_user)
+        user_id = self._user_id(current_user)
+        program = await self._program_repo.create(
+            organization_id=org_id,
+            athlete_id=athlete_id,
+            name=data["name"],
+            description=data.get("description"),
+            guidelines=data.get("guidelines"),
+            mode=data.get("mode", "program_driven"),
+            created_by_id=user_id,
+        )
+        await self._attach_days_from_dict(program.id, data.get("days", []))
+        full = await self._program_repo.get_by_id_fresh(program.id)
+        await publish(
+            "program.created",
+            {
+                "program_id": str(full.id),
+                "athlete_id": str(full.athlete_id),
+                "organization_id": str(full.organization_id)
+                if full.organization_id
+                else None,
+            },
+        )
+        return ProgramResponse.model_validate(full)
 
     async def add_day(
         self, current_user: dict, program_id: uuid.UUID, data: ProgramDayCreate
@@ -331,7 +459,18 @@ class ProgramService:
             exercise_id=data.exercise_id,
             position=data.position,
             notes=data.notes,
+            demo_video_url=data.demo_video_url,
         )
+        return ProgramExerciseResponse.model_validate(ex)
+
+    async def update_program_exercise(
+        self, current_user: dict, ex_id: uuid.UUID, data: ProgramExerciseUpdate
+    ) -> ProgramExerciseResponse:
+        ex = await self._ex_repo.get_by_id(ex_id)
+        if not ex:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Program exercise not found")
+        updates = data.model_dump(exclude_unset=True)
+        ex = await self._ex_repo.update(ex, **updates)
         return ProgramExerciseResponse.model_validate(ex)
 
     async def delete_exercise(self, ex_id: uuid.UUID) -> None:

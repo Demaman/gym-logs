@@ -25,6 +25,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/backend
+      - media_data:/backend/media
     restart: unless-stopped
 
   postgres:
@@ -58,3 +59,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  media_data:

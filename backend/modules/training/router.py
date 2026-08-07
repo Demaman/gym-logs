@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser
@@ -18,6 +18,7 @@ from modules.training.schemas import (
     ProgramDayUpdate,
     ProgramExerciseCreate,
     ProgramExerciseResponse,
+    ProgramExerciseUpdate,
     ProgramResponse,
     ProgramUpdate,
 )
@@ -95,6 +96,16 @@ async def delete_exercise(
 ) -> Response:
     await svc.delete(current_user, exercise_id)
     return Response(status_code=204)
+
+
+@router.post("/exercises/{exercise_id}/video", response_model=ExerciseResponse)
+async def upload_exercise_video(
+    exercise_id: uuid.UUID,
+    file: UploadFile,
+    current_user: CurrentUser,
+    svc: ExerciseService = Depends(_exercise_svc),
+) -> ExerciseResponse:
+    return await svc.upload_video(current_user, exercise_id, file)
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +225,16 @@ async def add_exercise_to_day(
     svc: ProgramService = Depends(_program_svc),
 ) -> ProgramExerciseResponse:
     return await svc.add_exercise(current_user, day_id, data)
+
+
+@router.patch("/program-exercises/{ex_id}", response_model=ProgramExerciseResponse)
+async def update_program_exercise(
+    ex_id: uuid.UUID,
+    data: ProgramExerciseUpdate,
+    current_user: CurrentUser,
+    svc: ProgramService = Depends(_program_svc),
+) -> ProgramExerciseResponse:
+    return await svc.update_program_exercise(current_user, ex_id, data)
 
 
 @router.delete("/exercises-in-day/{ex_id}", status_code=204)

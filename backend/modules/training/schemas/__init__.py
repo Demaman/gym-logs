@@ -21,6 +21,7 @@ from modules.training.schemas.program_day import (
 from modules.training.schemas.program_exercise import (
     ProgramExerciseCreate,
     ProgramExerciseResponse,
+    ProgramExerciseUpdate,
 )
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "PrescribedSetCreate",
     "PrescribedSetResponse",
     "ProgramExerciseCreate",
+    "ProgramExerciseUpdate",
     "ProgramExerciseResponse",
     "ProgramDayCreate",
     "ProgramDayUpdate",

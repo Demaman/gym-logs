@@ -13,6 +13,16 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    ai_api_key: str = ""
+    ai_model: str = "gemini-2.0-flash"
+    # Leave empty to use OpenAI's default endpoint.
+    # Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
+    # Groq:   https://api.groq.com/openai/v1
+    ai_base_url: str = ""
+
+    media_root: str = "/backend/media"
+    media_base_url: str = ""
+
     model_config = {"env_file": ".env"}
 
 
