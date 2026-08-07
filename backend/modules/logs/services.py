@@ -73,6 +73,18 @@ class SessionService:
                 if s.counts_volume:
                     total_volume += s.weight_kg * s.reps
                     working_sets += 1
+
+        # Batch-fetch catalog exercises to attach demo_video_url (one query)
+        exercise_ids = [ex.exercise_id for ex in exercises if ex.exercise_id]
+        if exercise_ids:
+            catalog_map = await self._exercise_repo.get_by_ids(exercise_ids)
+            for ex in exercises:
+                catalog_ex = catalog_map.get(ex.exercise_id) if ex.exercise_id else None
+                ex._demo_video_url = catalog_ex.demo_video_url if catalog_ex else None  # noqa: SLF001
+        else:
+            for ex in exercises:
+                ex._demo_video_url = None  # noqa: SLF001
+
         if program_day_id:
             await self._attach_prescribed_sets(exercises, program_day_id)
         summary = SessionSummary(
@@ -87,24 +99,28 @@ class SessionService:
     async def _attach_prescribed_sets(
         self, exercises: list, program_day_id: uuid.UUID
     ) -> None:
-        """Attach prescribed set targets to exercises, matched by position."""
+        """Attach prescribed set targets and program exercise video URL to exercises."""
         day = await self._program_day_repo.get_by_id(program_day_id)
         if not day:
             return
         pe_by_pos = {pe.position: pe for pe in day.exercises}
         for ex in exercises:
             pe = pe_by_pos.get(ex.position)
-            if pe and pe.prescribed_sets:
-                ex._prescribed_sets = [  # noqa: SLF001
-                    PrescribedSetTarget(
-                        set_type=ps.set_type,
-                        rep_min=ps.rep_min,
-                        rep_max=ps.rep_max,
-                        rpe_target=ps.rpe_target,
-                        rest_seconds=ps.rest_seconds,
-                    )
-                    for ps in sorted(pe.prescribed_sets, key=lambda s: s.position)
-                ]
+            if pe:
+                if pe.prescribed_sets:
+                    ex._prescribed_sets = [  # noqa: SLF001
+                        PrescribedSetTarget(
+                            set_type=ps.set_type,
+                            rep_min=ps.rep_min,
+                            rep_max=ps.rep_max,
+                            rpe_target=ps.rpe_target,
+                            rest_seconds=ps.rest_seconds,
+                        )
+                        for ps in sorted(pe.prescribed_sets, key=lambda s: s.position)
+                    ]
+                # Program exercise URL overrides catalog URL
+                if pe.demo_video_url:
+                    ex._demo_video_url = pe.demo_video_url  # noqa: SLF001
 
     @staticmethod
     def _ws_scalar(ws, *, exercises: list, summary: SessionSummary) -> WorkoutSessionResponse:
@@ -133,6 +149,7 @@ class SessionService:
                 exercise_name_free=ex.exercise_name_free,
                 position=ex.position,
                 notes=ex.notes,
+                demo_video_url=getattr(ex, "_demo_video_url", None),
                 logged_sets=[LoggedSetResponse.model_validate(s) for s in getattr(ex, "_loaded_sets", [])],
                 prescribed_sets=getattr(ex, "_prescribed_sets", []),
             )
@@ -199,6 +216,9 @@ class SessionService:
                         position=pe.position,
                     )
                     logged._loaded_sets = []  # noqa: SLF001
+                    logged._demo_video_url = pe.demo_video_url or (  # noqa: SLF001
+                        exercise.demo_video_url if exercise else None
+                    )
                     logged._prescribed_sets = [  # noqa: SLF001
                         PrescribedSetTarget(
                             set_type=ps.set_type,

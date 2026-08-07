@@ -35,6 +35,7 @@ class LoggedExerciseResponse(BaseModel):
     exercise_name_free: str | None
     position: int
     notes: str | None
+    demo_video_url: str | None = None
     logged_sets: list[LoggedSetResponse] = []
     prescribed_sets: list[PrescribedSetTarget] = []
 
