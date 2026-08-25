@@ -76,6 +76,13 @@ export async function updateProgram(
   return data
 }
 
+export async function previewProgramHtml(id: string): Promise<Blob> {
+  const { data } = await api.get<Blob>(`/api/v1/training/programs/${id}/export/preview`, {
+    responseType: 'blob',
+  })
+  return data
+}
+
 export async function deleteProgram(id: string): Promise<void> {
   await api.delete(`/api/v1/training/programs/${id}`)
 }

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ program.name }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #111827;
+      background: #EBEBF0;
+      padding: 32px 24px;
+    }
+
+    /* ── Page wrapper ─────────────────────────────── */
+    .page {
+      max-width: 820px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,.12);
+    }
+
+    /* ── Header ───────────────────────────────────── */
+    .header {
+      background: #7C3AED;
+      color: #ffffff;
+      padding: 36px 44px 32px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .gym-name {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .8;
+    }
+    .generated-date {
+      font-size: 11px;
+      opacity: .65;
+    }
+    .program-title {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      line-height: 1.15;
+      margin-bottom: 10px;
+    }
+    .program-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .program-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(255,255,255,.18);
+      border: 1px solid rgba(255,255,255,.25);
+      color: #fff;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    /* ── Program info (desc / guidelines) ─────────── */
+    .program-info {
+      padding: 20px 44px;
+      background: #F5F3FF;
+      border-bottom: 1px solid #DDD6FE;
+    }
+    .description {
+      font-size: 13px;
+      color: #374151;
+      margin-bottom: 10px;
+    }
+    .description:last-child { margin-bottom: 0; }
+    .guidelines-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #7C3AED;
+      margin-bottom: 4px;
+    }
+    .guidelines {
+      font-size: 12px;
+      color: #4B5563;
+      white-space: pre-wrap;
+    }
+
+    /* ── Days ─────────────────────────────────────── */
+    .days {
+      padding: 28px 44px 36px;
+    }
+    .day {
+      margin-bottom: 36px;
+    }
+    .day:last-child { margin-bottom: 0; }
+
+    .day-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #7C3AED;
+    }
+    .day-circle {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #7C3AED;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .day-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #111827;
+      flex: 1;
+    }
+    .day-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #6D28D9;
+      background: #EDE9FE;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    /* ── Exercise card ────────────────────────────── */
+    .exercise {
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .exercise:last-child { margin-bottom: 0; }
+
+    .ex-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #F9FAFB;
+      border-bottom: 1px solid #E5E7EB;
+    }
+    .ex-index {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: #E5E7EB;
+      color: #374151;
+      font-size: 11px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .ex-info { flex: 1; }
+    .ex-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 5px;
+    }
+    .ex-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    .tag {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #6B7280;
+      background: #E5E7EB;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .video-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #7C3AED;
+      background: #EDE9FE;
+      text-decoration: none;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #DDD6FE;
+    }
+    .video-link:hover { background: #DDD6FE; }
+    .video-url-print {
+      display: none;
+      font-size: 10px;
+      color: #6B7280;
+      word-break: break-all;
+      margin-top: 4px;
+    }
+
+    /* Exercise notes */
+    .ex-notes {
+      padding: 8px 16px;
+      background: #FFFBEB;
+      border-bottom: 1px solid #FEF3C7;
+      font-size: 12px;
+      color: #92400E;
+      font-style: italic;
+    }
+
+    /* ── Sets table ───────────────────────────────── */
+    .sets-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .sets-table thead tr {
+      background: #F3F0FF;
+    }
+    .sets-table thead th {
+      padding: 7px 14px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #5B21B6;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .sets-table tbody tr {
+      border-top: 1px solid #F3F4F6;
+    }
+    .sets-table tbody tr:nth-child(even) {
+      background: #FAFAFA;
+    }
+    .sets-table td {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: #374151;
+      vertical-align: middle;
+    }
+    .sets-table td.muted {
+      color: #9CA3AF;
+      font-style: italic;
+      font-size: 11px;
+    }
+
+    /* Set type badges */
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 2px 7px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .badge-working  { background: #DCFCE7; color: #166534; }
+    .badge-top      { background: #EDE9FE; color: #5B21B6; }
+    .badge-warmup   { background: #FEF3C7; color: #92400E; }
+    .badge-backoff  { background: #DBEAFE; color: #1D4ED8; }
+    .badge-failure  { background: #FEE2E2; color: #991B1B; }
+    .badge-deload   { background: #E0F2FE; color: #0369A1; }
+    .badge-other    { background: #F3F4F6; color: #6B7280; }
+
+    /* No sets placeholder */
+    .no-sets {
+      padding: 12px 16px;
+      font-size: 12px;
+      color: #9CA3AF;
+      font-style: italic;
+    }
+
+    /* ── Footer ───────────────────────────────────── */
+    .footer {
+      padding: 14px 44px;
+      border-top: 1px solid #E5E7EB;
+      background: #F9FAFB;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #9CA3AF;
+    }
+    .footer-brand { color: #7C3AED; font-weight: 700; }
+
+    /* ── Print overrides ──────────────────────────── */
+    @media print {
+      body { background: white; padding: 0; }
+      .page { box-shadow: none; border-radius: 0; max-width: 100%; }
+      .exercise { page-break-inside: avoid; }
+      .day { page-break-inside: avoid; }
+      .video-link { display: none; }
+      .video-url-print { display: block; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="header-top">
+      <span class="gym-name">{% if org %}{{ org.name }}{% else %}Training Program{% endif %}</span>
+      <span class="generated-date">{{ generated_at }}</span>
+    </div>
+    <div class="program-title">{{ program.name }}</div>
+    <div class="program-badges">
+      <span class="program-badge">{{ program.days | length }} day{% if program.days | length != 1 %}s{% endif %}</span>
+      <span class="program-badge">{{ total_exercises }} exercise{% if total_exercises != 1 %}s{% endif %}</span>
+      <span class="program-badge">{{ program.mode | replace('_', ' ') | title }}</span>
+    </div>
+  </div>
+
+  <!-- ── Description / Guidelines ── -->
+  {% if program.description or program.guidelines %}
+  <div class="program-info">
+    {% if program.description %}
+    <p class="description">{{ program.description }}</p>
+    {% endif %}
+    {% if program.guidelines %}
+    <div class="guidelines-label">Guidelines</div>
+    <p class="guidelines">{{ program.guidelines }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ── Days ── -->
+  <div class="days">
+    {% for day in program.days %}
+    <div class="day">
+
+      <div class="day-header">
+        <div class="day-circle">{{ loop.index }}</div>
+        <span class="day-name">{{ day.name }}</span>
+        <span class="day-tag">{{ day.day_tag | day_tag_label }}</span>
+      </div>
+
+      {% for pe in day.exercises %}
+      {% set video = pe.demo_video_url or (pe.exercise.demo_video_url if pe.exercise else None) %}
+      <div class="exercise">
+
+        <!-- Exercise header -->
+        <div class="ex-header">
+          <div class="ex-index">{{ loop.index }}</div>
+          <div class="ex-info">
+            <div class="ex-name">{{ pe.exercise.name if pe.exercise else "Unknown exercise" }}</div>
+            <div class="ex-tags">
+              {% if pe.exercise %}
+              <span class="tag">{{ pe.exercise.muscle_group | muscle_label }}</span>
+              <span class="tag">{{ pe.exercise.equipment | replace('_', ' ') | title }}</span>
+              {% if not pe.exercise.is_bilateral %}<span class="tag">Unilateral</span>{% endif %}
+              {% endif %}
+            </div>
+            {% if video %}
+            <a class="video-link" href="{{ video }}" target="_blank" rel="noopener">▶ Watch Demo</a>
+            <span class="video-url-print">{{ video }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Notes -->
+        {% if pe.notes %}
+        <div class="ex-notes">{{ pe.notes }}</div>
+        {% endif %}
+
+        <!-- Sets -->
+        {% if pe.prescribed_sets %}
+        <table class="sets-table">
+          <thead>
+            <tr>
+              <th style="width:36px">#</th>
+              <th>Type</th>
+              <th>Reps</th>
+              <th>RPE</th>
+              <th>Rest</th>
+              <th style="width:40%">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ps in pe.prescribed_sets %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>
+                <span class="badge {{ ps.set_type | set_type_class }}">
+                  {{ ps.set_type | set_type_label }}
+                </span>
+              </td>
+              <td>
+                {{ ps.rep_min }}{% if ps.rep_max != ps.rep_min %}–{{ ps.rep_max }}{% endif %}
+              </td>
+              <td>{{ ps.rpe_target | fmt_rpe }}</td>
+              <td>{{ ps.rest_seconds | fmt_rest }}</td>
+              <td class="muted">{{ ps.notes or "" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="no-sets">No sets prescribed for this exercise.</p>
+        {% endif %}
+
+      </div>
+      {% endfor %}
+
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ── Footer ── -->
+  <div class="footer">
+    <span>Generated {{ generated_at }}{% if org %} &nbsp;·&nbsp; {{ org.name }}{% endif %}</span>
+    <span class="footer-brand">gym-logs</span>
+  </div>
+
+</div>
+</body>
+</html>

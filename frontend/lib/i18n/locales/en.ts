@@ -198,6 +198,9 @@ export const en = {
     createExercise: 'Create exercise',
     editExercise: 'Edit exercise',
     saveExercise: 'Save exercise',
+    exportProgram: 'Export',
+    previewPdf: 'Preview PDF',
+    shareWhatsApp: 'Share via WhatsApp',
   },
   health: {
     title: 'Health Profile', subtitle: 'Your physical profile and body measurements',

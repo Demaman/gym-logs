@@ -1,12 +1,15 @@
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException, UploadFile, status
+from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.events import publish
+from db.repositories.identity import OrganizationRepository
 from db.repositories.training import (
     ExerciseRepository,
     PrescribedSetRepository,
@@ -525,3 +528,108 @@ class ProgramService:
                 status.HTTP_404_NOT_FOUND, "Prescribed set not found"
             )
         await self._set_repo.delete(ps)
+
+
+# ---------------------------------------------------------------------------
+# Export helpers (Jinja2 filters)
+# ---------------------------------------------------------------------------
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+def _fmt_rest(seconds: int | None) -> str:
+    if not seconds:
+        return "—"
+    if seconds < 60:
+        return f"{seconds}s"
+    m, s = divmod(seconds, 60)
+    return f"{m}min" if s == 0 else f"{m}min {s}s"
+
+
+def _fmt_rpe(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return str(int(value)) if value == int(value) else str(value)
+
+
+def _set_type_label(value: str) -> str:
+    return {
+        "warm_up": "Warm Up", "feeder": "Feeder", "working": "Working",
+        "back_off": "Back Off", "top_set": "Top Set", "failure": "Failure",
+        "drop_set": "Drop Set", "rest_pause": "Rest Pause", "cluster": "Cluster",
+        "burnout": "Burnout", "technique": "Technique", "deload": "Deload",
+    }.get(value, value.replace("_", " ").title())
+
+
+def _set_type_class(value: str) -> str:
+    return {
+        "working": "badge-working", "top_set": "badge-top",
+        "warm_up": "badge-warmup", "back_off": "badge-backoff",
+        "failure": "badge-failure", "deload": "badge-deload",
+    }.get(value, "badge-other")
+
+
+def _day_tag_label(value: str) -> str:
+    return {
+        "push": "Push", "pull": "Pull", "legs": "Legs",
+        "upper": "Upper Body", "lower": "Lower Body", "full_body": "Full Body",
+        "cardio": "Cardio", "custom": "Custom", "chest": "Chest",
+        "back": "Back", "shoulders": "Shoulders", "arms": "Arms",
+        "glutes": "Glutes", "core": "Core",
+    }.get(value, value.replace("_", " ").title())
+
+
+def _muscle_label(value: str) -> str:
+    return {
+        "chest": "Chest", "back": "Back", "shoulders": "Shoulders",
+        "biceps": "Biceps", "triceps": "Triceps", "forearms": "Forearms",
+        "core": "Core", "quads": "Quads", "hamstrings": "Hamstrings",
+        "glutes": "Glutes", "calves": "Calves", "full_body": "Full Body",
+    }.get(value, value.replace("_", " ").title())
+
+
+def _build_jinja_env() -> Environment:
+    env = Environment(
+        loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+        autoescape=True,
+    )
+    env.filters["fmt_rest"] = _fmt_rest
+    env.filters["fmt_rpe"] = _fmt_rpe
+    env.filters["set_type_label"] = _set_type_label
+    env.filters["set_type_class"] = _set_type_class
+    env.filters["day_tag_label"] = _day_tag_label
+    env.filters["muscle_label"] = _muscle_label
+    return env
+
+
+class ProgramExportService:
+    def __init__(self, session: AsyncSession) -> None:
+        self._program_repo = ProgramRepository(session)
+        self._org_repo = OrganizationRepository(session)
+
+    async def render_html(self, current_user: dict, program_id: uuid.UUID) -> str:
+        org_id = (
+            uuid.UUID(current_user["organization_id"])
+            if current_user.get("organization_id")
+            else None
+        )
+        user_id = uuid.UUID(current_user["user_id"])
+
+        program = await self._program_repo.get_by_id_for_export(
+            program_id, org_id, user_id
+        )
+        if not program:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
+
+        org = await self._org_repo.get_by_id(org_id) if org_id else None
+
+        total_exercises = sum(len(day.exercises) for day in program.days)
+
+        env = _build_jinja_env()
+        template = env.get_template("program_export.html")
+        return template.render(
+            program=program,
+            org=org,
+            total_exercises=total_exercises,
+            generated_at=datetime.now().strftime("%B %d, %Y"),
+        )

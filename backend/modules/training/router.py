@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Response, UploadFile
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import CurrentUser
@@ -22,7 +23,11 @@ from modules.training.schemas import (
     ProgramResponse,
     ProgramUpdate,
 )
-from modules.training.services import ExerciseService, ProgramService
+from modules.training.services import (
+    ExerciseService,
+    ProgramExportService,
+    ProgramService,
+)
 
 router = APIRouter(prefix="/training", tags=["training"])
 
@@ -33,6 +38,10 @@ def _exercise_svc(db: AsyncSession = Depends(get_db)) -> ExerciseService:
 
 def _program_svc(db: AsyncSession = Depends(get_db)) -> ProgramService:
     return ProgramService(db)
+
+
+def _export_svc(db: AsyncSession = Depends(get_db)) -> ProgramExportService:
+    return ProgramExportService(db)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +156,16 @@ async def update_program(
     svc: ProgramService = Depends(_program_svc),
 ) -> ProgramResponse:
     return await svc.update(current_user, program_id, data)
+
+
+@router.get("/programs/{program_id}/export/preview", response_class=HTMLResponse)
+async def preview_program_export(
+    program_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: ProgramExportService = Depends(_export_svc),
+) -> HTMLResponse:
+    html = await svc.render_html(current_user, program_id)
+    return HTMLResponse(content=html)
 
 
 @router.post("/programs/{program_id}/assign", response_model=list[ProgramResponse], status_code=201)

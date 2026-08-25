@@ -18,6 +18,8 @@ import {
   Sparkles,
   BookOpen,
   Pencil,
+  FileDown,
+  MessageCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,7 +31,7 @@ import { useAuthStore } from '@/lib/auth/store'
 import { useI18n } from '@/providers/i18n-provider'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePrograms, useCreateProgram, useAssignProgram, useDeleteProgram, useAddDay, useDeleteDay, useDeleteProgramExercise, useUpdateProgram } from '@/hooks/training/use-programs'
-import { addExerciseToDay, addPrescribedSet, replacePrescribedSets, updateProgramExercise } from '@/lib/api/training'
+import { addExerciseToDay, addPrescribedSet, replacePrescribedSets, updateProgramExercise, previewProgramHtml } from '@/lib/api/training'
 import { useStartSession } from '@/hooks/logs/use-start-session'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
 import { deleteSession } from '@/lib/api/logs'
@@ -1082,6 +1084,53 @@ function ProgramDetail({
 
   const canEditGuidelines = role === 'trainer' || role === 'gym_admin'
 
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+
+  function buildWhatsAppText(): string {
+    let msg = `*${program.name}*`
+    if (program.description) msg += `\n_${program.description}_`
+    msg += '\n\n'
+    for (const day of sortedDays) {
+      msg += `*${day.name}*\n`
+      const dayExercises = [...day.exercises].sort((a, b) => a.position - b.position)
+      for (const pe of dayExercises) {
+        const ex = exerciseMap.get(pe.exercise_id)
+        const name = ex?.name ?? 'Exercise'
+        const sets = pe.prescribed_sets
+        if (sets.length > 0) {
+          const first = sets[0]
+          const reps = first.rep_min === first.rep_max ? `${first.rep_min}` : `${first.rep_min}–${first.rep_max}`
+          const rpe = first.rpe_target ? ` @ RPE ${first.rpe_target}` : ''
+          msg += `  • ${name} — ${sets.length} × ${reps} reps${rpe}\n`
+        } else {
+          msg += `  • ${name}\n`
+        }
+      }
+      msg += '\n'
+    }
+    return msg.trim()
+  }
+
+  async function handleOpenPreview() {
+    setIsLoadingPreview(true)
+    setShowExportMenu(false)
+    try {
+      const blob = await previewProgramHtml(program.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      setTimeout(() => URL.revokeObjectURL(url), 15000)
+    } finally {
+      setIsLoadingPreview(false)
+    }
+  }
+
+  function handleShareWhatsApp() {
+    setShowExportMenu(false)
+    const text = encodeURIComponent(buildWhatsAppText())
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer')
+  }
+
   async function handleSaveGuidelines() {
     await updateProgram.mutateAsync({
       id: program.id,
@@ -1315,34 +1364,77 @@ function ProgramDetail({
               {sortedDays.length} day{sortedDays.length !== 1 ? 's' : ''} · {totalExercises(program)} exercise{totalExercises(program) !== 1 ? 's' : ''}
             </p>
           </div>
-          {canEdit && (
-            <div className="shrink-0">
-              {!confirmDeleteProgram ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConfirmDeleteProgram(true)}
-                  className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <Trash2 className="size-3.5" aria-hidden />
-                  {t.training.deleteProgram}
-                </Button>
-              ) : (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setConfirmDeleteProgram(false)}>
-                    {t.training.cancel}
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => onDeleteProgram(program.id)}
-                  >
-                    {t.training.confirmDelete}
-                  </Button>
-                </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Export / Share — always visible */}
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isLoadingPreview}
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="gap-1.5"
+              >
+                {isLoadingPreview
+                  ? <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  : <FileDown className="size-3.5" aria-hidden />
+                }
+                {t.training.exportProgram}
+              </Button>
+              {showExportMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+                  <div className="absolute right-0 top-9 z-20 w-52 rounded-xl border border-border bg-card py-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={handleOpenPreview}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent/50"
+                    >
+                      <FileDown className="size-3.5 text-muted-foreground" aria-hidden />
+                      {t.training.previewPdf}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShareWhatsApp}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-accent/50"
+                    >
+                      <MessageCircle className="size-3.5 text-green-600" aria-hidden />
+                      {t.training.shareWhatsApp}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-          )}
+
+            {/* Delete — editors only */}
+            {canEdit && (
+              <>
+                {!confirmDeleteProgram ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmDeleteProgram(true)}
+                    className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                    {t.training.deleteProgram}
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setConfirmDeleteProgram(false)}>
+                      {t.training.cancel}
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => onDeleteProgram(program.id)}
+                    >
+                      {t.training.confirmDelete}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Assign-to-athlete section (trainer/admin only) */}

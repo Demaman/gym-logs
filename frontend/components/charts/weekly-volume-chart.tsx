@@ -57,6 +57,7 @@ export function WeeklyVolumeChart({
           width={40}
         />
         <Tooltip
+          cursor={false}
           formatter={(value: unknown) => [`${value ?? ''} kg`, totalLabel]}
           labelFormatter={(label: unknown) => formatWeekLabel(String(label))}
           contentStyle={{
@@ -67,7 +68,7 @@ export function WeeklyVolumeChart({
             color: 'hsl(var(--foreground))',
           }}
         />
-        <Bar dataKey="volume_kg" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="volume_kg" fill="hsl(263 70% 50%)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )

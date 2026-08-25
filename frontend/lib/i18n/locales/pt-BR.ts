@@ -198,6 +198,9 @@ export const ptBR = {
     createExercise: 'Criar exercício',
     editExercise: 'Editar exercício',
     saveExercise: 'Salvar exercício',
+    exportProgram: 'Exportar',
+    previewPdf: 'Visualizar PDF',
+    shareWhatsApp: 'Compartilhar no WhatsApp',
   },
   health: {
     title: 'Perfil de Saúde', subtitle: 'Seu perfil físico e medidas corporais',

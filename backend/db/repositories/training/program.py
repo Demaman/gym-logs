@@ -10,11 +10,23 @@ from db.models.training.program_exercise import ProgramExercise
 
 
 def _with_days() -> list:
-    """Return the selectinload options to eagerly fetch days → exercises → prescribed_sets."""
+    """Eagerly fetch days → exercises → prescribed_sets."""
     return [
         selectinload(Program.days).selectinload(ProgramDay.exercises).selectinload(
             ProgramExercise.prescribed_sets
         )
+    ]
+
+
+def _with_days_full() -> list:
+    """Like _with_days but also loads the catalog Exercise on each ProgramExercise."""
+    return [
+        selectinload(Program.days)
+        .selectinload(ProgramDay.exercises)
+        .selectinload(ProgramExercise.prescribed_sets),
+        selectinload(Program.days)
+        .selectinload(ProgramDay.exercises)
+        .selectinload(ProgramExercise.exercise),
     ]
 
 
@@ -127,6 +139,29 @@ class ProgramRepository:
             select(Program).options(*_with_days()).where(Program.id == program.id)
         )
         return result.scalar_one()
+
+    async def get_by_id_for_export(
+        self,
+        program_id: uuid.UUID,
+        organization_id: uuid.UUID | None,
+        user_id: uuid.UUID | None = None,
+    ) -> Program | None:
+        """Load program with full exercise catalog data needed for export/preview."""
+        stmt = (
+            select(Program)
+            .options(*_with_days_full())
+            .where(Program.id == program_id, Program.is_active.is_(True))
+        )
+        if organization_id is not None:
+            stmt = stmt.where(Program.organization_id == organization_id)
+        else:
+            stmt = stmt.where(Program.organization_id.is_(None))
+            if user_id is not None:
+                stmt = stmt.where(
+                    or_(Program.created_by_id == user_id, Program.athlete_id == user_id)
+                )
+        result = await self._s.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_by_id_fresh(self, program_id: uuid.UUID) -> Program | None:
         """Re-fetch a program from the DB, bypassing the session identity-map cache."""
