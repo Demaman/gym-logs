@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.events import publish
+from db.constants.training import CoefficientClass
 from db.repositories.identity import OrganizationRepository
 from db.repositories.training import (
     ExerciseRepository,
@@ -73,6 +74,11 @@ class ExerciseService:
             else None
         )
         user_id = uuid.UUID(current_user["user_id"])
+        battle_coefficient = (
+            CoefficientClass.COEFFICIENT_MAP[data.coefficient_class]
+            if data.coefficient_class
+            else 1.0
+        )
         ex = await self._repo.create(
             organization_id=org_id,
             name=data.name,
@@ -86,6 +92,7 @@ class ExerciseService:
             created_by_id=user_id,
             notes=data.notes,
             demo_video_url=data.demo_video_url,
+            battle_coefficient=battle_coefficient,
         )
         return ExerciseResponse.model_validate(ex)
 
@@ -108,6 +115,9 @@ class ExerciseService:
                 status.HTTP_403_FORBIDDEN, "Not authorized to modify this exercise"
             )
         updates = data.model_dump(exclude_unset=True)
+        coeff_class = updates.pop("coefficient_class", None)
+        if coeff_class is not None:
+            updates["battle_coefficient"] = CoefficientClass.COEFFICIENT_MAP[coeff_class]
         ex = await self._repo.update(ex, **updates)
         return ExerciseResponse.model_validate(ex)
 
@@ -528,6 +538,17 @@ class ProgramService:
                 status.HTTP_404_NOT_FOUND, "Prescribed set not found"
             )
         await self._set_repo.delete(ps)
+
+    async def count_active_for_athlete(
+        self,
+        *,
+        athlete_id: uuid.UUID,
+        organization_id: uuid.UUID | None,
+    ) -> int:
+        """Internal cross-module method — no current_user auth required."""
+        return await self._program_repo.count_active_for_athlete(
+            athlete_id=athlete_id, organization_id=organization_id
+        )
 
 
 # ---------------------------------------------------------------------------

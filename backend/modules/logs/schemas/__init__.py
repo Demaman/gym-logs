@@ -1,3 +1,16 @@
+from modules.logs.schemas.battle import (
+    BattleParticipant,
+    BattleResponse,
+    BattleStateResponse,
+    ExerciseScore,
+    JoinBattleResponse,
+)
+from modules.logs.schemas.attendance import (
+    AttendanceCheckinRequest,
+    AttendanceSummary,
+    HeatmapPoint,
+    MemberAttendance,
+)
 from modules.logs.schemas.exercise import (
     ExerciseAverage,
     LoggedExerciseCreate,
@@ -28,6 +41,15 @@ from modules.logs.schemas.set import (
 )
 
 __all__ = [
+    "BattleResponse",
+    "BattleParticipant",
+    "BattleStateResponse",
+    "ExerciseScore",
+    "JoinBattleResponse",
+    "AttendanceCheckinRequest",
+    "AttendanceSummary",
+    "HeatmapPoint",
+    "MemberAttendance",
     "ProgressStats",
     "WeeklyVolumePoint",
     "WeeklyVolumeSeries",

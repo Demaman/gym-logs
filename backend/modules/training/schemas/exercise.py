@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from db.constants.training import CoefficientClass
+
 MuscleGroupLiteral = Literal[
     "chest",
     "back",
@@ -38,6 +40,14 @@ MovementPatternLiteral = Literal[
     "isolation",
 ]
 
+CoefficientClassLiteral = Literal[
+    "machine_isolation",
+    "cable_assisted",
+    "upper_compound",
+    "lower_compound",
+    "barbell_compound",
+]
+
 
 class ExerciseCreate(BaseModel):
     name: str
@@ -49,6 +59,7 @@ class ExerciseCreate(BaseModel):
     is_bilateral: bool = True
     notes: str | None = None
     demo_video_url: str | None = None
+    coefficient_class: CoefficientClassLiteral | None = None
 
 
 class ExerciseUpdate(BaseModel):
@@ -61,6 +72,7 @@ class ExerciseUpdate(BaseModel):
     is_bilateral: bool | None = None
     notes: str | None = None
     demo_video_url: str | None = None
+    coefficient_class: CoefficientClassLiteral | None = None
 
 
 class ExerciseResponse(BaseModel):
@@ -76,5 +88,6 @@ class ExerciseResponse(BaseModel):
     is_global: bool
     notes: str | None
     demo_video_url: str | None
+    battle_coefficient: float
     created_at: datetime
     model_config = {"from_attributes": True}

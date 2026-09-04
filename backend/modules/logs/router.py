@@ -6,8 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import CurrentUser
 from core.database import get_db
 from modules.logs.schemas import (
+    AttendanceCheckinRequest,
+    AttendanceSummary,
+    BattleResponse,
+    BattleStateResponse,
     ExerciseHistorySeries,
     FinishSessionRequest,
+    JoinBattleResponse,
     LoggedExerciseCreate,
     LoggedExerciseResponse,
     LoggedSetCreate,
@@ -19,7 +24,7 @@ from modules.logs.schemas import (
     WorkoutSessionResponse,
 )
 from modules.logs.schemas.session import UpdateSessionRequest
-from modules.logs.services import ExerciseLogService, SessionService, SetLogService, TrainerLogService
+from modules.logs.services import AttendanceService, BattleService, ExerciseLogService, SessionService, SetLogService, TrainerLogService
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -38,6 +43,14 @@ def _ex_svc(db: AsyncSession = Depends(get_db)) -> ExerciseLogService:
 
 def _set_svc(db: AsyncSession = Depends(get_db)) -> SetLogService:
     return SetLogService(db)
+
+
+def _attendance_svc(db: AsyncSession = Depends(get_db)) -> AttendanceService:
+    return AttendanceService(db)
+
+
+def _battle_svc(db: AsyncSession = Depends(get_db)) -> BattleService:
+    return BattleService(db)
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +264,46 @@ async def delete_set(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/athletes/{athlete_id}/sessions", response_model=WorkoutSessionResponse, status_code=201)
+async def trainer_start_session(
+    athlete_id: uuid.UUID,
+    data: WorkoutSessionCreate,
+    current_user: CurrentUser,
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> WorkoutSessionResponse:
+    return await svc.start_athlete_session(current_user, athlete_id, data)
+
+
+# NOTE: /athletes/{athlete_id}/sessions/active must come before list so FastAPI
+# doesn't try to parse the literal "active" as a UUID.
+@router.get("/athletes/{athlete_id}/sessions/active")
+async def trainer_get_athlete_active_session(
+    athlete_id: uuid.UUID,
+    current_user: CurrentUser,
+    response: Response,
+    svc: TrainerLogService = Depends(_trainer_svc),
+):
+    result = await svc.get_athlete_active_session(current_user, athlete_id)
+    if result is None:
+        response.status_code = 204
+        return None
+    return result
+
+
+@router.patch(
+    "/athletes/{athlete_id}/sessions/{session_id}/finish",
+    response_model=WorkoutSessionResponse,
+)
+async def trainer_finish_session(
+    athlete_id: uuid.UUID,
+    session_id: uuid.UUID,
+    data: FinishSessionRequest,
+    current_user: CurrentUser,
+    svc: TrainerLogService = Depends(_trainer_svc),
+) -> WorkoutSessionResponse:
+    return await svc.finish_athlete_session(current_user, athlete_id, session_id, data)
+
+
 @router.get("/athletes/{athlete_id}/sessions", response_model=list[WorkoutSessionResponse])
 async def list_athlete_sessions(
     athlete_id: uuid.UUID,
@@ -292,3 +345,81 @@ async def get_athlete_exercise_history(
     svc: TrainerLogService = Depends(_trainer_svc),
 ) -> ExerciseHistorySeries:
     return await svc.get_athlete_exercise_history(current_user, athlete_id, catalog_id)
+
+
+# ── Attendance ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/attendance/checkin", status_code=204)
+async def manual_checkin(
+    data: AttendanceCheckinRequest,
+    current_user: CurrentUser,
+    svc: AttendanceService = Depends(_attendance_svc),
+) -> None:
+    await svc.manual_checkin(current_user, data)
+
+
+@router.get("/attendance/summary", response_model=AttendanceSummary)
+async def get_attendance_summary(
+    current_user: CurrentUser,
+    svc: AttendanceService = Depends(_attendance_svc),
+) -> AttendanceSummary:
+    return await svc.get_summary(current_user)
+
+
+# ── Battles ─────────────────────────────────────────────────────────────────
+
+
+# NOTE: /sessions/{session_id}/battle must come after /sessions/{session_id}
+# to avoid conflicts — FastAPI handles by declaration order.
+
+@router.post("/sessions/{session_id}/battle", response_model=BattleResponse, status_code=201)
+async def start_battle(
+    session_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: BattleService = Depends(_battle_svc),
+) -> BattleResponse:
+    return await svc.start_battle(current_user, session_id)
+
+
+# NOTE: /sessions/{session_id}/battle must be declared BEFORE the generic
+# /sessions/{session_id} GET so "battle" isn't routed as a second path segment.
+@router.get("/sessions/{session_id}/battle")
+async def get_session_battle(
+    session_id: uuid.UUID,
+    current_user: CurrentUser,
+    response: Response,
+    svc: BattleService = Depends(_battle_svc),
+):
+    result = await svc.get_session_battle(current_user, session_id)
+    if result is None:
+        response.status_code = 204
+        return None
+    return result
+
+
+@router.post("/battles/{code}/join", response_model=JoinBattleResponse, status_code=201)
+async def join_battle(
+    code: str,
+    data: WorkoutSessionCreate,
+    current_user: CurrentUser,
+    svc: BattleService = Depends(_battle_svc),
+) -> JoinBattleResponse:
+    return await svc.join_battle(current_user, code, data)
+
+
+@router.get("/battles", response_model=list[BattleStateResponse])
+async def list_battles(
+    current_user: CurrentUser,
+    svc: BattleService = Depends(_battle_svc),
+) -> list[BattleStateResponse]:
+    return await svc.list_battles(current_user)
+
+
+@router.get("/battles/{battle_id}", response_model=BattleStateResponse)
+async def get_battle_state(
+    battle_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: BattleService = Depends(_battle_svc),
+) -> BattleStateResponse:
+    return await svc.get_battle_state(current_user, battle_id)

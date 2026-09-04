@@ -87,6 +87,7 @@ class ExerciseRepository:
         created_by_id: uuid.UUID | None,
         notes: str | None,
         demo_video_url: str | None = None,
+        battle_coefficient: float = 1.0,
     ) -> Exercise:
         exercise = Exercise(
             organization_id=organization_id,
@@ -101,6 +102,7 @@ class ExerciseRepository:
             created_by_id=created_by_id,
             notes=notes,
             demo_video_url=demo_video_url,
+            battle_coefficient=battle_coefficient,
         )
         self._s.add(exercise)
         await self._s.commit()

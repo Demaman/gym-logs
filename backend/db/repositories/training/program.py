@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -185,3 +185,17 @@ class ProgramRepository:
     async def soft_delete(self, program: Program) -> None:
         program.is_active = False
         await self._s.commit()
+
+    async def count_active_for_athlete(
+        self,
+        *,
+        athlete_id: uuid.UUID,
+        organization_id: uuid.UUID | None,
+    ) -> int:
+        conditions = [Program.athlete_id == athlete_id, Program.is_active.is_(True)]
+        if organization_id is not None:
+            conditions.append(Program.organization_id == organization_id)
+        result = await self._s.execute(
+            select(func.count()).select_from(Program).where(*conditions)
+        )
+        return result.scalar_one() or 0

@@ -119,6 +119,36 @@ class MovementPattern:
     )
 
 
+class CoefficientClass:
+    """Human-readable battle scoring class for custom exercises.
+
+    Translates to a battle_coefficient so trainers never see raw floats.
+    Reference: barbell squat / deadlift = 1.0 (BARBELL_COMPOUND).
+    """
+
+    MACHINE_ISOLATION = "machine_isolation"   # leg press, curls, extensions → 0.35
+    CABLE_ASSISTED    = "cable_assisted"      # cable rows, lat pulldown      → 0.55
+    UPPER_COMPOUND    = "upper_compound"      # bench, OHP, barbell row       → 0.70
+    LOWER_COMPOUND    = "lower_compound"      # squat, lunges, RDL            → 0.90
+    BARBELL_COMPOUND  = "barbell_compound"    # deadlift, power clean         → 1.00
+
+    ALL: tuple[str, ...] = (
+        MACHINE_ISOLATION,
+        CABLE_ASSISTED,
+        UPPER_COMPOUND,
+        LOWER_COMPOUND,
+        BARBELL_COMPOUND,
+    )
+
+    COEFFICIENT_MAP: dict[str, float] = {
+        MACHINE_ISOLATION: 0.35,
+        CABLE_ASSISTED:    0.55,
+        UPPER_COMPOUND:    0.70,
+        LOWER_COMPOUND:    0.90,
+        BARBELL_COMPOUND:  1.00,
+    }
+
+
 class DayTag:
     PUSH = "push"
     PULL = "pull"
