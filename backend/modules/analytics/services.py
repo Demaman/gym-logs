@@ -8,6 +8,7 @@ from db.repositories.analytics import (
     AthleteProfileRepository,
     BodyMeasurementRepository,
 )
+from db.repositories.identity import UserRepository
 from modules.analytics.schemas import (
     AthleteProfileResponse,
     AthleteProfileUpdate,
@@ -21,6 +22,7 @@ class AnamnesisService:
     def __init__(self, session: AsyncSession) -> None:
         self._profile_repo = AthleteProfileRepository(session)
         self._measurement_repo = BodyMeasurementRepository(session)
+        self._user_repo = UserRepository(session)
 
     def _user_id(self, user: CurrentUser) -> uuid.UUID:
         return uuid.UUID(str(user["user_id"]))
@@ -37,8 +39,10 @@ class AnamnesisService:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers can manage athlete data")
         trainer_org = self._org_id(user)
         if trainer_org is not None:
-            profile = await self._profile_repo.get_by_user(athlete_id)
-            if profile is not None and profile.organization_id is not None and profile.organization_id != trainer_org:
+            # Check org membership from the user record — not the profile, which may not
+            # exist yet for a new athlete, creating an IDOR bypass if profile is None.
+            athlete = await self._user_repo.get_by_id(athlete_id)
+            if athlete is None or athlete.organization_id != trainer_org:
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Athlete is not in your organization")
 
     # ── Profile ───────────────────────────────────────────────────────────────
