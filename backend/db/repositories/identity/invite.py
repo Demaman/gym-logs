@@ -76,6 +76,7 @@ class InviteRepository:
                 Invite.email == email.lower(),
                 Invite.organization_id == organization_id,
                 Invite.accepted_at.is_(None),
+                Invite.expires_at > datetime.now(UTC),
             )
             .limit(1)
         )

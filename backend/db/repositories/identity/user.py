@@ -56,3 +56,21 @@ class UserRepository:
             return []
         result = await self._s.execute(select(User).where(User.id.in_(user_ids)))
         return list(result.scalars().all())
+
+    async def get_by_email_and_org(self, email: str, organization_id: uuid.UUID) -> User | None:
+        result = await self._s.execute(
+            select(User).where(
+                User.email == email,
+                User.organization_id == organization_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_athletes_by_org(self, organization_id: uuid.UUID) -> list[User]:
+        result = await self._s.execute(
+            select(User).where(
+                User.organization_id == organization_id,
+                User.role == "athlete",
+            )
+        )
+        return list(result.scalars().all())
