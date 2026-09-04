@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Copy, Loader2 } from 'lucide-react'
+import { Building2, Copy, Loader2, RefreshCw } from 'lucide-react'
 
 import { useI18n } from '@/providers/i18n-provider'
 import { useAuthStore } from '@/lib/auth/store'
@@ -14,6 +14,7 @@ import {
   useUpdateMe,
   useChangePassword,
   useUpdateMyOrganization,
+  useRefreshStatus,
 } from '@/hooks/identity/use-settings'
 import { useMyTrainer, useLeaveOrganization } from '@/hooks/identity/use-memberships'
 import { useMyInvites, useAcceptInvite, useDeclineInvite } from '@/hooks/identity/use-invites'
@@ -568,12 +569,41 @@ function AthleteOrgCard() {
   const { data: org, isLoading: orgLoading } = useMyOrganization()
   const { data: trainerMembership, isLoading: trainerLoading } = useMyTrainer()
   const leave = useLeaveOrganization()
+  const refresh = useRefreshStatus()
 
   if (orgLoading || trainerLoading) {
     return <p className="text-sm text-muted-foreground">{t.common.loading}</p>
   }
 
-  if (!org) return null
+  if (!org) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-6 text-center">
+        <Building2 className="size-10 text-muted-foreground" aria-hidden />
+        <div>
+          <p className="font-semibold text-foreground">{t.settings.noGymTitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t.settings.noGymDesc}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refresh.mutate()}
+          disabled={refresh.isPending}
+        >
+          {refresh.isPending ? (
+            <>
+              <Loader2 className="mr-2 size-3 animate-spin" aria-hidden />
+              {t.settings.refreshing}
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 size-3" aria-hidden />
+              {t.settings.refreshStatus}
+            </>
+          )}
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -636,7 +666,7 @@ export default function SettingsPage() {
   const role = useRole()
   const user = useAuthStore((s) => s.user)
   const canEditOrg = role === 'gym_admin'
-  const isLinkedAthlete = role === 'athlete' && !!user?.organization_id
+  const isAthlete = role === 'athlete'
 
   return (
     <div className="space-y-8 p-6 lg:p-8">
@@ -664,10 +694,10 @@ export default function SettingsPage() {
         </Section>
       )}
 
-      {role === 'athlete' && <PendingInvitesSection />}
+      {isAthlete && <PendingInvitesSection />}
 
-      {isLinkedAthlete && (
-        <Section title={t.settings.organization} description={t.settings.orgLinkedDesc}>
+      {isAthlete && (
+        <Section title={t.settings.organization} description={t.settings.gymMembershipDesc}>
           <AthleteOrgCard />
         </Section>
       )}

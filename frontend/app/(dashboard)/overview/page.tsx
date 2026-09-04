@@ -1,197 +1,343 @@
-import { LayoutDashboard, UserCheck, Users, Calendar, Dumbbell, ChevronRight } from 'lucide-react'
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  Users, UserCheck, Activity, ChevronRight, Play,
+  Timer, Dumbbell, CalendarCheck, TrendingUp,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-
-// ── Mock data ─────────────────────────────────────────────────────────────────
-
-const STATS = [
-  {
-    label: 'Trainers',
-    value: '3',
-    sub:   'in your organization',
-    icon:  UserCheck,
-  },
-  {
-    label: 'Athletes',
-    value: '15',
-    sub:   'across all trainers',
-    icon:  Users,
-  },
-  {
-    label: 'Sessions this week',
-    value: '47',
-    sub:   '+12% vs last week',
-    up:    true,
-    icon:  Calendar,
-  },
-  {
-    label: 'Org volume this month',
-    value: '84,320',
-    unit:  'kg',
-    sub:   null,
-    icon:  Dumbbell,
-  },
-]
-
-const TRAINERS = [
-  { name: 'Carlos Mendoza', athletes: 5,  sessions: 18, volume: '28,400 kg' },
-  { name: 'Sarah Johnson',  athletes: 3,  sessions: 12, volume: '19,800 kg' },
-  { name: 'Mike Torres',    athletes: 7,  sessions: 17, volume: '36,120 kg' },
-]
-
-const ACTIVITY = [
-  { athlete: 'Alex Chen',   session: 'Push Day',   coach: 'Carlos Mendoza', date: 'Jun 30', volume: '3,280 kg', pr: true  },
-  { athlete: 'Emma Wilson', session: 'Leg Day',    coach: 'Sarah Johnson',  date: 'Jun 29', volume: '4,100 kg', pr: false },
-  { athlete: 'Jordan Lee',  session: 'Pull Day',   coach: 'Carlos Mendoza', date: 'Jun 28', volume: '2,850 kg', pr: false },
-  { athlete: 'Ryan Park',   session: 'Upper Body', coach: 'Mike Torres',    date: 'Jun 28', volume: '3,100 kg', pr: false },
-]
+import { useAuthStore } from '@/lib/auth/store'
+import { useRole } from '@/hooks/use-role'
+import { useI18n } from '@/providers/i18n-provider'
+import { useMyMemberships } from '@/hooks/identity/use-memberships'
+import { useOrgAthletes } from '@/hooks/identity/use-org-athletes'
+import { useOrgTrainers } from '@/hooks/identity/use-memberships'
+import { useAthleteActiveSession } from '@/hooks/logs/use-athlete-active-session'
+import { usePrograms } from '@/hooks/training/use-programs'
+import { useAttendanceSummary } from '@/hooks/logs/use-attendance'
+import type { MembershipEnriched, User } from '@/types/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function initials(name: string) {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
+function useCountUp(startedAt: Date | null) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startedAt) { setElapsed(0); return }
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  return elapsed
+}
+
+function fmtElapsed(s: number) {
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+}
+
+function greeting(name: string) {
+  const h = new Date().getHours()
+  if (h < 12) return `Good morning, ${name}`
+  if (h < 18) return `Good afternoon, ${name}`
+  return `Good evening, ${name}`
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label,
-  value,
-  unit,
-  sub,
-  up,
-  icon: Icon,
+  label, value, unit, icon: Icon, href,
 }: {
-  label: string
-  value: string
-  unit?: string
-  sub: string | null
-  up?: boolean
-  icon: React.ElementType
+  label: string; value: string | number; unit?: string; icon: React.ElementType; href?: string
 }) {
+  const router = useRouter()
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="size-4 text-primary" aria-hidden />
-        </span>
+    <button
+      type="button"
+      onClick={() => href && router.push(href)}
+      className={cn(
+        'flex flex-col gap-1 rounded-xl border border-border bg-card p-4 text-left',
+        href && 'cursor-pointer transition-shadow hover:shadow-sm',
+        !href && 'cursor-default',
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <Icon className="size-4 text-muted-foreground/60" aria-hidden />
       </div>
-      <div>
-        <p className="text-3xl font-bold tabular-nums tracking-tight text-foreground">
-          {value}
-          {unit && (
-            <span className="ml-1.5 text-lg font-medium text-muted-foreground">{unit}</span>
-          )}
-        </p>
-        {sub && (
-          <p
-            className={cn(
-              'mt-1 text-xs font-medium',
-              up === true  ? 'text-[color:var(--success)]' : 'text-muted-foreground',
-            )}
-          >
-            {up && '↑ '}{sub}
-          </p>
-        )}
-      </div>
-    </div>
+      <p className="text-2xl font-bold tabular-nums text-foreground">
+        {value}
+        {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
+      </p>
+    </button>
   )
 }
 
-// ── Trainer row ───────────────────────────────────────────────────────────────
+// ── Live session row ──────────────────────────────────────────────────────────
 
-function TrainerRow({
-  name,
-  athletes,
-  sessions,
-  volume,
-}: {
-  name: string
-  athletes: number
-  sessions: number
-  volume: string
-}) {
+function LiveRow({ athleteId, email }: { athleteId: string; email: string }) {
+  const router = useRouter()
+  const { data: session } = useAthleteActiveSession(athleteId)
+  const elapsed = useCountUp(session ? new Date(session.started_at) : null)
+  if (!session) return null
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:bg-accent/30">
-      {/* Avatar */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-sm text-primary-foreground">
-        {initials(name)}
-      </span>
-
-      {/* Name */}
-      <p className="min-w-0 flex-1 text-sm font-semibold text-foreground">{name}</p>
-
-      {/* Stats chips */}
-      <div className="hidden items-center gap-2 sm:flex">
-        <span className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-medium text-foreground tabular-nums">
-          <span className="text-muted-foreground">Athletes </span>{athletes}
-        </span>
-        <span className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-medium text-foreground tabular-nums">
-          <span className="text-muted-foreground">Sessions </span>{sessions}
-        </span>
-        <span className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-medium text-foreground tabular-nums">
-          {volume}
-        </span>
-      </div>
-
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" aria-hidden />
-    </div>
-  )
-}
-
-// ── Activity row ──────────────────────────────────────────────────────────────
-
-function ActivityRow({
-  athlete,
-  session,
-  coach,
-  date,
-  volume,
-  pr,
-}: {
-  athlete: string
-  session: string
-  coach: string
-  date: string
-  volume: string
-  pr: boolean
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:bg-accent/30">
-      {/* Athlete avatar */}
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
-        {initials(athlete)}
-      </span>
-
-      {/* Details */}
+    <div className="flex items-center gap-3 rounded-xl border border-[color:var(--success)]/30 bg-[color:var(--success)]/5 px-4 py-3">
+      <span className="size-2 shrink-0 rounded-full bg-[color:var(--success)] animate-pulse" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-foreground">{athlete}</p>
-          {pr && (
-            <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-destructive">
-              PR
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {session}{' '}
-          <span className="mx-1 text-border">·</span>
-          <span className="text-primary/80">Coach: {coach}</span>
+        <p className="truncate text-sm font-semibold text-foreground">{email}</p>
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Timer className="size-3" aria-hidden />
+          {session.name} · {fmtElapsed(elapsed)}
         </p>
       </div>
+      <Button size="sm" onClick={() => router.push(`/logs/${session.id}`)}>
+        Resume
+      </Button>
+    </div>
+  )
+}
 
-      {/* Meta */}
-      <div className="hidden shrink-0 flex-col items-end gap-0.5 sm:flex">
-        <p className="text-xs font-semibold tabular-nums text-foreground">{volume}</p>
-        <p className="text-[10px] text-muted-foreground">{date}</p>
+// ── Client quick-row ──────────────────────────────────────────────────────────
+
+function ClientQuickRow({
+  athlete, programCount,
+}: { athlete: MembershipEnriched; programCount: number }) {
+  const router = useRouter()
+  const { data: active } = useAthleteActiveSession(athlete.athlete_id)
+  const initials = athlete.athlete_email.split('@')[0].slice(0, 2).toUpperCase()
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent/40">
+      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+        {initials}
+        {active && (
+          <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-background bg-[color:var(--success)] animate-pulse" aria-hidden />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{athlete.athlete_email}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {active
+            ? <span className="text-[color:var(--success)] font-medium">Training now</span>
+            : <>{programCount} program{programCount !== 1 ? 's' : ''}</>
+          }
+        </p>
       </div>
+      {active ? (
+        <button
+          type="button"
+          onClick={() => router.push(`/logs/${active.id}`)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-[color:var(--success)] transition-colors hover:bg-[color:var(--success)]/10"
+          aria-label="Resume session"
+        >
+          <Play className="size-3.5 fill-current" aria-hidden />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => router.push('/training')}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label="Go to training"
+        >
+          <ChevronRight className="size-4" aria-hidden />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Trainer overview ──────────────────────────────────────────────────────────
+
+function TrainerOverview() {
+  const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const { data: athletes = [], isLoading: loadingAthletes } = useMyMemberships()
+  const { data: programs = [], isLoading: loadingPrograms } = usePrograms()
+  const displayName = user?.email.split('@')[0] ?? 'Trainer'
+
+  const assignedCount = programs.filter((p) => p.athlete_id != null).length
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <header className="flex h-16 shrink-0 items-center border-b border-border bg-background/80 px-4 backdrop-blur md:px-6">
+        <div>
+          <h1 className="text-base font-semibold text-foreground capitalize">{greeting(displayName)}</h1>
+          <p className="text-xs text-muted-foreground">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+      </header>
+
+      <main className="flex-1 space-y-6 p-4 md:p-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Clients" value={athletes.length} icon={Users} href="/athletes" />
+          <StatCard label="Programs" value={assignedCount} unit="assigned" icon={Dumbbell} href="/training" />
+          <StatCard label="Attendance" value="Today" icon={CalendarCheck} href="/attendance" />
+        </div>
+
+        {/* Live sessions */}
+        {!loadingAthletes && athletes.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">Live sessions</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {athletes.map((m) => (
+                <LiveRow key={m.athlete_id} athleteId={m.athlete_id} email={m.athlete_email} />
+              ))}
+              {/* LiveRow only renders if session exists, so show empty state if all null */}
+            </div>
+          </section>
+        )}
+
+        {/* Clients */}
+        <section>
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">Your clients</p>
+            <button
+              type="button"
+              onClick={() => router.push('/athletes')}
+              className="flex items-center gap-1 text-xs font-medium text-primary hover:opacity-70"
+            >
+              View all <ChevronRight className="size-3" aria-hidden />
+            </button>
+          </div>
+          {loadingAthletes ? (
+            <div className="flex flex-col gap-1">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+            </div>
+          ) : athletes.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Users className="size-8 text-muted" aria-hidden />
+              <p className="text-sm text-muted-foreground">No clients yet</p>
+              <Button size="sm" variant="outline" onClick={() => router.push('/settings')}>
+                Invite a client
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-card">
+              {athletes.slice(0, 8).map((m, i) => {
+                const count = programs.filter((p) => p.athlete_id === m.athlete_id).length
+                return (
+                  <div key={m.athlete_id} className={cn(i > 0 && 'border-t border-border')}>
+                    <ClientQuickRow athlete={m} programCount={count} />
+                  </div>
+                )
+              })}
+              {athletes.length > 8 && (
+                <div className="border-t border-border px-3 py-2.5 text-center">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/athletes')}
+                    className="text-xs font-medium text-primary hover:opacity-70"
+                  >
+                    +{athletes.length - 8} more clients
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  )
+}
+
+// ── Gym admin overview ────────────────────────────────────────────────────────
+
+function AdminOverview() {
+  const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const { data: athletes = [], isLoading: loadingAthletes } = useOrgAthletes()
+  const { data: trainers = [], isLoading: loadingTrainers } = useOrgTrainers()
+  const { data: attendance } = useAttendanceSummary()
+  const displayName = user?.email.split('@')[0] ?? 'Admin'
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      <header className="flex h-16 shrink-0 items-center border-b border-border bg-background/80 px-4 backdrop-blur md:px-6">
+        <div>
+          <h1 className="text-base font-semibold text-foreground capitalize">{greeting(displayName)}</h1>
+          <p className="text-xs text-muted-foreground">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+      </header>
+
+      <main className="flex-1 space-y-6 p-4 md:p-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            label="Members"
+            value={loadingAthletes ? '—' : athletes.length}
+            icon={Users}
+            href="/athletes"
+          />
+          <StatCard
+            label="Trainers"
+            value={loadingTrainers ? '—' : trainers.length}
+            icon={UserCheck}
+            href="/trainers"
+          />
+          <StatCard
+            label="Check-ins today"
+            value={attendance?.today_count ?? '—'}
+            icon={Activity}
+            href="/attendance"
+          />
+          <StatCard
+            label="This week"
+            value={attendance?.this_week_count ?? '—'}
+            unit="check-ins"
+            icon={TrendingUp}
+            href="/attendance"
+          />
+        </div>
+
+        {/* Live sessions — all athletes in the org */}
+        {athletes.length > 0 && (
+          <section>
+            <p className="mb-3 text-sm font-semibold text-foreground">Live sessions</p>
+            <div className="flex flex-col gap-2">
+              {athletes.map((a: User) => (
+                <LiveRow key={a.id} athleteId={a.id} email={a.email} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Quick links */}
+        <section>
+          <p className="mb-3 text-sm font-semibold text-foreground">Quick actions</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: 'Manage trainers', icon: UserCheck, href: '/trainers' },
+              { label: 'All members',     icon: Users,     href: '/athletes' },
+              { label: 'Attendance',      icon: CalendarCheck, href: '/attendance' },
+              { label: 'Member health',   icon: Activity,  href: '/member-health' },
+            ].map(({ label, icon: Icon, href }) => (
+              <button
+                key={href}
+                type="button"
+                onClick={() => router.push(href)}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-4 text-center transition-shadow hover:shadow-sm"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                  <Icon className="size-4 text-primary" aria-hidden />
+                </span>
+                <span className="text-xs font-medium text-foreground">{label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
   )
 }
@@ -199,49 +345,15 @@ function ActivityRow({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
-  return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
+  const router = useRouter()
+  const role = useRole()
 
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-6 backdrop-blur">
-        <LayoutDashboard className="size-5 text-primary" aria-hidden />
-        <div>
-          <h1 className="text-base font-semibold text-foreground">Overview</h1>
-          <p className="text-xs text-muted-foreground">Organization-wide training summary</p>
-        </div>
-      </header>
+  // Athletes don't have an overview — redirect to their logs dashboard
+  useEffect(() => {
+    if (role === 'athlete') router.replace('/logs')
+  }, [role, router])
 
-      {/* ── Content ─────────────────────────────────────────────────── */}
-      <main className="flex-1 space-y-6 p-6">
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-          {STATS.map((s) => (
-            <StatCard key={s.label} {...s} />
-          ))}
-        </div>
-
-        {/* Trainers section */}
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-foreground">Trainers</h2>
-          <div className="flex flex-col gap-2.5">
-            {TRAINERS.map((t) => (
-              <TrainerRow key={t.name} {...t} />
-            ))}
-          </div>
-        </section>
-
-        {/* Recent activity */}
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-foreground">Recent activity</h2>
-          <div className="flex flex-col gap-2.5">
-            {ACTIVITY.map((a) => (
-              <ActivityRow key={a.athlete + a.date} {...a} />
-            ))}
-          </div>
-        </section>
-
-      </main>
-    </div>
-  )
+  if (role === 'athlete') return null
+  if (role === 'trainer') return <TrainerOverview />
+  return <AdminOverview />
 }

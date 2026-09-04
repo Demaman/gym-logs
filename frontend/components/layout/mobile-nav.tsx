@@ -10,6 +10,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   HeartPulse,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/auth/store'
@@ -28,10 +29,10 @@ const MOBILE_NAV_BY_ROLE: Record<Role, MobileNavItem[]> = {
     { href: '/analytics', labelKey: 'analytics', icon: TrendingUp },
   ],
   trainer: [
-    { href: '/logs',      labelKey: 'logs',      icon: ClipboardList },
-    { href: '/training',  labelKey: 'training',  icon: BookOpen      },
-    { href: '/health',    labelKey: 'health',    icon: HeartPulse    },
-    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp    },
+    { href: '/overview',  labelKey: 'overview',     icon: LayoutDashboard },
+    { href: '/logs',      labelKey: 'logs',         icon: ClipboardList   },
+    { href: '/athletes',  labelKey: 'athletes',     icon: Users           },
+    { href: '/training',  labelKey: 'programs',     icon: BookOpen        },
   ],
   gym_admin: [
     { href: '/overview',  labelKey: 'overview',  icon: LayoutDashboard },

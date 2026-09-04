@@ -7,6 +7,7 @@ export function useActiveSession() {
     queryKey: ['logs', 'active'],
     queryFn: getActiveSession,
     refetchOnWindowFocus: true,
-    staleTime: 10_000,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
   })
 }

@@ -129,6 +129,13 @@ export type Equipment =
 export type MovementPattern =
   | 'push' | 'pull' | 'squat' | 'hinge' | 'carry' | 'rotation' | 'isolation'
 
+export type CoefficientClass =
+  | 'machine_isolation'
+  | 'cable_assisted'
+  | 'upper_compound'
+  | 'lower_compound'
+  | 'barbell_compound'
+
 export type DayTag =
   | 'push' | 'pull' | 'legs' | 'upper' | 'lower' | 'full_body' | 'cardio' | 'custom'
   | 'chest' | 'back' | 'shoulders' | 'arms' | 'glutes' | 'core'
@@ -148,6 +155,7 @@ export interface Exercise {
   is_global: boolean
   notes: string | null
   demo_video_url: string | null
+  battle_coefficient: number
   created_at: string
 }
 
@@ -286,6 +294,7 @@ export interface CreateExerciseRequest {
   is_bilateral?: boolean
   notes?: string
   demo_video_url?: string | null
+  coefficient_class?: CoefficientClass | null
 }
 
 export interface UpdateExerciseRequest {
@@ -298,6 +307,7 @@ export interface UpdateExerciseRequest {
   is_bilateral?: boolean
   notes?: string | null
   demo_video_url?: string | null
+  coefficient_class?: CoefficientClass | null
 }
 
 // ── Training request types ────────────────────────────────────────────────────
@@ -508,4 +518,83 @@ export interface ExerciseHistoryPoint {
 export interface ExerciseHistorySeries {
   exercise_name: string | null
   points: ExerciseHistoryPoint[]
+}
+
+export type MemberStatus = 'active' | 'at_risk' | 'dormant' | 'no_program' | 'new'
+
+export interface MemberHealth {
+  user_id: string
+  email: string
+  joined_at: string
+  status: MemberStatus
+  last_session_at: string | null
+  days_since_last_session: number | null
+  active_program_count: number
+}
+
+export interface HeatmapPoint {
+  day_of_week: number
+  hour: number
+  count: number
+}
+
+export interface MemberAttendance {
+  user_id: string
+  email: string
+  sessions_count: number
+  last_checkin: string | null
+}
+
+export interface AttendanceSummary {
+  today_count: number
+  yesterday_count: number
+  this_week_count: number
+  last_week_count: number
+  heatmap: HeatmapPoint[]
+  per_member: MemberAttendance[]
+}
+
+export interface SessionBattle {
+  id: string
+  battle_code: string
+  status: 'waiting' | 'active' | 'finished'
+  initiator_session_id: string
+  opponent_session_id: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface ExerciseScore {
+  exercise_id: string | null
+  exercise_name: string
+  score: number
+  volume_kg: number
+  total_reps: number
+  max_weight_kg: number
+  total_weight_kg: number
+}
+
+export interface BattleParticipant {
+  athlete_id: string
+  email: string
+  session_id: string
+  score: number
+  volume_kg: number
+  body_weight_kg: number | null
+  finished: boolean
+  exercises: ExerciseScore[]
+}
+
+export interface BattleState {
+  id: string
+  battle_code: string
+  status: 'waiting' | 'active' | 'finished'
+  finished_at: string | null
+  initiator: BattleParticipant
+  opponent: BattleParticipant | null
+}
+
+export interface JoinBattleResponse {
+  session: WorkoutSession
+  battle: BattleState
 }

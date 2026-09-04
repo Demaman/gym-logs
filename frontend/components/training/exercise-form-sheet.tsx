@@ -10,7 +10,23 @@ import { useI18n } from '@/providers/i18n-provider'
 import { useCreateExercise } from '@/hooks/training/use-exercises'
 import { useUpdateExercise } from '@/hooks/training/use-exercises'
 import { useUploadExerciseVideo } from '@/hooks/training/use-exercises'
-import type { Exercise, MuscleGroup, Equipment, MovementPattern } from '@/types/api'
+import type { Exercise, MuscleGroup, Equipment, MovementPattern, CoefficientClass } from '@/types/api'
+
+const COEFFICIENT_CLASSES: CoefficientClass[] = [
+  'machine_isolation',
+  'cable_assisted',
+  'upper_compound',
+  'lower_compound',
+  'barbell_compound',
+]
+
+const COEFFICIENT_CLASS_LABELS: Record<CoefficientClass, { label: string; hint: string; value: number }> = {
+  machine_isolation: { label: 'Machine / Isolation',   hint: 'e.g. leg press, curls, extensions',     value: 0.35 },
+  cable_assisted:    { label: 'Cable & Assisted',       hint: 'e.g. lat pulldown, cable rows',          value: 0.55 },
+  upper_compound:    { label: 'Upper Body Compound',    hint: 'e.g. bench press, rows, overhead press', value: 0.70 },
+  lower_compound:    { label: 'Lower Body Compound',    hint: 'e.g. squat, lunges, RDL',                value: 0.90 },
+  barbell_compound:  { label: 'Barbell Power',          hint: 'e.g. deadlift, power clean',             value: 1.00 },
+}
 
 const MUSCLE_GROUPS: MuscleGroup[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms',
@@ -60,6 +76,7 @@ export function ExerciseFormSheet({ open, onClose, onSuccess, exercise }: Props)
   const [equipment, setEquipment] = useState<Equipment>('barbell')
   const [movementPattern, setMovementPattern] = useState<MovementPattern>('push')
   const [isBilateral, setIsBilateral] = useState(true)
+  const [coefficientClass, setCoefficientClass] = useState<CoefficientClass | ''>('')
   const [notes, setNotes] = useState('')
   const [videoTab, setVideoTab] = useState<'link' | 'upload'>('link')
   const [videoUrl, setVideoUrl] = useState('')
@@ -82,6 +99,7 @@ export function ExerciseFormSheet({ open, onClose, onSuccess, exercise }: Props)
       setEquipment(exercise?.equipment ?? 'barbell')
       setMovementPattern(exercise?.movement_pattern ?? 'push')
       setIsBilateral(exercise?.is_bilateral ?? true)
+      setCoefficientClass('')
       setNotes(exercise?.notes ?? '')
       setVideoTab('link')
       setVideoUrl(exercise?.demo_video_url ?? '')
@@ -139,6 +157,7 @@ export function ExerciseFormSheet({ open, onClose, onSuccess, exercise }: Props)
             is_bilateral: isBilateral,
             notes: notes.trim() || null,
             demo_video_url: videoTab === 'link' ? (videoUrl.trim() || null) : exercise.demo_video_url,
+            ...(coefficientClass ? { coefficient_class: coefficientClass } : {}),
           },
         })
       } else {
@@ -150,6 +169,7 @@ export function ExerciseFormSheet({ open, onClose, onSuccess, exercise }: Props)
           is_bilateral: isBilateral,
           notes: notes.trim() || undefined,
           demo_video_url: videoTab === 'link' ? (videoUrl.trim() || null) : null,
+          ...(coefficientClass ? { coefficient_class: coefficientClass } : {}),
         })
       }
       if (videoTab === 'upload' && videoFile) {
@@ -266,6 +286,38 @@ export function ExerciseFormSheet({ open, onClose, onSuccess, exercise }: Props)
                   {t.training.isBilateralLabel}
                 </button>
               </div>
+            </div>
+
+            {/* Battle scoring class */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground">Battle Scoring Class</label>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">Battle</span>
+              </div>
+              <Select
+                value={coefficientClass}
+                onValueChange={(v) => setCoefficientClass(v as CoefficientClass | '')}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder={exercise ? `Current: ×${exercise.battle_coefficient}` : 'Choose a class…'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {COEFFICIENT_CLASSES.map((cls) => {
+                    const { label, hint, value } = COEFFICIENT_CLASS_LABELS[cls]
+                    return (
+                      <SelectItem key={cls} value={cls}>
+                        <div className="flex flex-col">
+                          <span>{label} <span className="ml-1 text-xs text-muted-foreground">×{value}</span></span>
+                          <span className="text-xs text-muted-foreground">{hint}</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Normalises scores in battles so high-load machines don't outweigh barbell compounds.
+              </p>
             </div>
 
             {/* Notes */}

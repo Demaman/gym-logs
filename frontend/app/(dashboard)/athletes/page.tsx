@@ -44,8 +44,9 @@ import {
   useDeleteMembership,
 } from '@/hooks/identity/use-memberships'
 import { useInvites, useInviteMember, useDeleteInvite } from '@/hooks/identity/use-invites'
+import { useOrgAthletes } from '@/hooks/identity/use-org-athletes'
 import type { AxiosError } from 'axios'
-import type { ApiError, Invite, MembershipEnriched } from '@/types/api'
+import type { ApiError, Invite, MembershipEnriched, User } from '@/types/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -304,6 +305,26 @@ function InviteRow({ invite }: { invite: Invite }) {
   )
 }
 
+// ── Unlinked athlete card (no trainer assigned) ───────────────────────────────
+
+function UnlinkedAthleteCard({ user }: { user: User }) {
+  const { t } = useI18n()
+  return (
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:bg-accent/30">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
+        {emailInitials(user.email)}
+      </span>
+      <Link href={`/athletes/${user.id}`} className="min-w-0 flex-1 group">
+        <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+          {user.email}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t.athletes.noTrainer}</p>
+      </Link>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </div>
+  )
+}
+
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function MembershipSkeleton() {
@@ -323,11 +344,13 @@ function MembershipSkeleton() {
 
 function AthletesList({
   linked,
+  unlinked = [],
   pending,
   isAdmin,
   isLoading,
 }: {
   linked: MembershipEnriched[]
+  unlinked?: User[]
   pending: Invite[]
   isAdmin: boolean
   isLoading: boolean
@@ -344,7 +367,7 @@ function AthletesList({
     )
   }
 
-  if (linked.length === 0 && pending.length === 0) {
+  if (linked.length === 0 && unlinked.length === 0 && pending.length === 0) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <Users className="size-10 text-muted" aria-hidden />
@@ -361,11 +384,23 @@ function AthletesList({
       {linked.length > 0 && (
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {isAdmin ? t.athletes.allClients : t.athletes.linkedClients} · {linked.length}
+            {isAdmin ? t.athletes.assignedClients : t.athletes.linkedClients} · {linked.length}
           </h2>
           <div className="space-y-2">
             {linked.map((m) => (
               <MembershipCard key={m.id} membership={m} showTrainer={isAdmin} />
+            ))}
+          </div>
+        </section>
+      )}
+      {unlinked.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t.athletes.unassignedClients} · {unlinked.length}
+          </h2>
+          <div className="space-y-2">
+            {unlinked.map((a) => (
+              <UnlinkedAthleteCard key={a.id} user={a} />
             ))}
           </div>
         </section>
@@ -401,12 +436,11 @@ function TrainerContent() {
 
 function AdminContent() {
   const memberships = useOrgMemberships()
+  const orgAthletes = useOrgAthletes()
   const invites = useInvites()
 
-  // Each athlete may have multiple membership rows (e.g. one legacy gym-admin
-  // link + a real trainer link). Show each athlete once, keeping the most
-  // recently created membership so the real trainer is displayed.
-  const deduped = (() => {
+  // Deduplicate memberships: one row per athlete, keeping the most-recent trainer link.
+  const linkedDeduped = (() => {
     const latest = new Map<string, MembershipEnriched>()
     for (const m of memberships.data ?? []) {
       const existing = latest.get(m.athlete_id)
@@ -417,12 +451,16 @@ function AdminContent() {
     return [...latest.values()]
   })()
 
+  const linkedIds = new Set(linkedDeduped.map((m) => m.athlete_id))
+  const unlinked = (orgAthletes.data ?? []).filter((a) => !linkedIds.has(a.id))
+
   return (
     <AthletesList
-      linked={deduped}
+      linked={linkedDeduped}
+      unlinked={unlinked}
       pending={(invites.data ?? []).filter((i) => i.accepted_at === null)}
       isAdmin={true}
-      isLoading={memberships.isLoading}
+      isLoading={memberships.isLoading || orgAthletes.isLoading}
     />
   )
 }

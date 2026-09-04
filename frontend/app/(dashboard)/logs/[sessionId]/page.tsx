@@ -22,6 +22,8 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/hooks/logs/use-session'
 import { useFinishSession } from '@/hooks/logs/use-finish-session'
+import { useFinishAthleteSession } from '@/hooks/logs/use-finish-athlete-session'
+import { useAuthStore } from '@/lib/auth/store'
 import { useUpdateSession } from '@/hooks/logs/use-update-session'
 import { useDiscardSession } from '@/hooks/logs/use-discard-session'
 import { useAddExercise, useDeleteExercise } from '@/hooks/logs/use-exercise-log'
@@ -31,6 +33,10 @@ import { useExerciseLastSession } from '@/hooks/logs/use-exercise-history'
 import { usePrograms } from '@/hooks/training/use-programs'
 import { useI18n } from '@/providers/i18n-provider'
 import { ExerciseVideoModal, VideoPreviewButton } from '@/components/training/exercise-video-modal'
+import { BattleStrip } from '@/components/logs/battle-strip'
+import { BattleInitiateModal } from '@/components/logs/battle-initiate-modal'
+import { useSessionBattle } from '@/hooks/logs/use-session-battle'
+import { Swords } from 'lucide-react'
 import type { WorkoutSession, LoggedExercise, LoggedSet, SetType, ExerciseLastSession, DayTag, PrescribedSetTarget } from '@/types/api'
 
 // ── Volume helper ─────────────────────────────────────────────────────────────
@@ -1203,17 +1209,20 @@ function LinkProgramDrawer({
 
 interface FinishDialogProps {
   sessionId: string
+  athleteId?: string
   open: boolean
   onClose: () => void
 }
 
-function FinishDialog({ sessionId, open, onClose }: FinishDialogProps) {
+function FinishDialog({ sessionId, athleteId, open, onClose }: FinishDialogProps) {
   const { t } = useI18n()
   const router = useRouter()
   const [difficulty, setDifficulty] = useState<number | ''>('')
   const [notes, setNotes] = useState('')
 
-  const finish = useFinishSession(sessionId)
+  const finishOwn = useFinishSession(sessionId)
+  const finishAthlete = useFinishAthleteSession(athleteId ?? '', sessionId)
+  const finish = athleteId ? finishAthlete : finishOwn
 
   // Close on Escape
   useEffect(() => {
@@ -1378,11 +1387,20 @@ export default function ActiveSessionPage({
   const [discardOpen, setDiscardOpen] = useState(false)
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [linkProgramOpen, setLinkProgramOpen] = useState(false)
+  const [battleOpen, setBattleOpen] = useState(false)
   const [restStartedAt, setRestStartedAt] = useState<Date | null>(null)
   const [totalRestSeconds, setTotalRestSeconds] = useState(0)
   const [totalLoggedWorkSeconds, setTotalLoggedWorkSeconds] = useState(0)
 
+  const currentUser = useAuthStore((s) => s.user)
   const { data: session, isLoading, error } = useSession(sessionId)
+  const { data: battle } = useSessionBattle(sessionId)
+
+  // When the session belongs to a different user (trainer managing athlete's session)
+  const isTrainerSession =
+    !!session &&
+    !!currentUser &&
+    session.athlete_id !== currentUser.id
   const { data: programs = [] } = usePrograms()
 
   // Resolve linked program day name from cached programs list
@@ -1499,6 +1517,18 @@ export default function ActiveSessionPage({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {!isTrainerSession && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setBattleOpen(true)}
+              aria-label={t.battle.modalTitle}
+              className={battle ? 'text-primary' : 'text-muted-foreground hover:text-primary'}
+            >
+              <Swords className="mr-1 size-4" aria-hidden />
+              {t.battle.battleBtn}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1573,6 +1603,11 @@ export default function ActiveSessionPage({
         </div>
       )}
 
+      {/* ── Battle strip ────────────────────────────────────────────────────── */}
+      {battle && (
+        <BattleStrip battle={battle} currentUserId={currentUser?.id} />
+      )}
+
       {/* ── Exercise list ─────────────────────────────────────────────────────── */}
       <main className="flex-1 space-y-3 overflow-y-auto p-4 pb-36 sm:p-6 lg:pb-24">
         {session.logged_exercises.length === 0 ? (
@@ -1623,6 +1658,7 @@ export default function ActiveSessionPage({
       {/* ── Finish dialog ──────────────────────────────────────────────────────── */}
       <FinishDialog
         sessionId={sessionId}
+        athleteId={isTrainerSession ? session.athlete_id : undefined}
         open={finishOpen}
         onClose={() => setFinishOpen(false)}
       />
@@ -1649,6 +1685,16 @@ export default function ActiveSessionPage({
         open={linkProgramOpen}
         onClose={() => setLinkProgramOpen(false)}
       />
+
+      {/* ── Battle modal ───────────────────────────────────────────────────────── */}
+      {battleOpen && (
+        <BattleInitiateModal
+          open={battleOpen}
+          onClose={() => setBattleOpen(false)}
+          sessionId={sessionId}
+          existingBattle={battle ?? null}
+        />
+      )}
     </div>
   )
 }

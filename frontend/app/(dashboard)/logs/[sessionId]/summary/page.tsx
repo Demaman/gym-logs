@@ -2,12 +2,15 @@
 
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Dumbbell } from 'lucide-react'
+import { ArrowLeft, Dumbbell, Swords, Trophy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/hooks/logs/use-session'
-import type { LoggedExercise, LoggedSet } from '@/types/api'
+import { useSessionBattle } from '@/hooks/logs/use-session-battle'
+import { useAuthStore } from '@/lib/auth/store'
+import { useI18n } from '@/providers/i18n-provider'
+import type { LoggedExercise, LoggedSet, BattleParticipant } from '@/types/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -166,6 +169,133 @@ function PageSkeleton() {
   )
 }
 
+// ── Battle result card ────────────────────────────────────────────────────────
+
+function BattleResultCard({
+  me,
+  them,
+  status,
+}: {
+  me: BattleParticipant
+  them: BattleParticipant
+  status: string
+}) {
+  const { t } = useI18n()
+  const iWon = me.score > them.score
+  const tied = me.score === them.score
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl border p-4',
+        status === 'finished'
+          ? iWon
+            ? 'border-[color:var(--success)]/40 bg-[color:var(--success)]/5'
+            : tied
+              ? 'border-border bg-muted/20'
+              : 'border-destructive/30 bg-destructive/5'
+          : 'border-border bg-card',
+      )}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <Swords className="size-4 text-primary" aria-hidden />
+        <span className="text-sm font-semibold text-foreground">{t.battle.resultTitle}</span>
+        {status === 'finished' && (
+          <span
+            className={cn(
+              'ml-auto rounded-full px-2.5 py-0.5 text-xs font-semibold',
+              iWon
+                ? 'bg-[color:var(--success)]/10 text-[color:var(--success)]'
+                : tied
+                  ? 'bg-secondary text-muted-foreground'
+                  : 'bg-destructive/10 text-destructive',
+            )}
+          >
+            {iWon ? `🏆 ${t.battle.victory}` : tied ? t.battle.draw : t.battle.defeat}
+          </span>
+        )}
+      </div>
+
+      {/* Score comparison */}
+      <div className="grid grid-cols-3 items-center gap-2 text-center">
+        <div>
+          <p className="text-2xl font-bold tabular-nums text-foreground">
+            {me.score.toFixed(0)}
+          </p>
+          <p className="text-[10px] text-muted-foreground">{t.battle.you}</p>
+          {!me.body_weight_kg && (
+            <p className="text-[9px] text-muted-foreground/60">{t.battle.rawVolNote}</p>
+          )}
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="text-xs font-bold text-muted-foreground">{t.battle.vs}</span>
+        </div>
+        <div>
+          <p className="text-2xl font-bold tabular-nums text-foreground">
+            {them.score.toFixed(0)}
+          </p>
+          <p className="truncate text-[10px] text-muted-foreground">{them.email.split('@')[0]}</p>
+        </div>
+      </div>
+
+      {/* Per-exercise breakdown */}
+      {(me.exercises.length > 0 || them.exercises.length > 0) && (() => {
+        // Union of all exercise names from both sides
+        const allNames = Array.from(
+          new Set([
+            ...me.exercises.map((e) => e.exercise_name),
+            ...them.exercises.map((e) => e.exercise_name),
+          ])
+        )
+        const meByName = Object.fromEntries(me.exercises.map((e) => [e.exercise_name, e]))
+        const themByName = Object.fromEntries(them.exercises.map((e) => [e.exercise_name, e]))
+        return (
+        <div className="mt-3 overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">{t.battle.colExercise}</th>
+                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">{t.battle.colReps}</th>
+                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">{t.battle.colWeight}</th>
+                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">{t.battle.colYou}</th>
+                <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">{t.battle.colThem}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allNames.map((name) => {
+                const myEx = meByName[name]
+                const theirEx = themByName[name]
+                const myS = myEx?.score ?? 0
+                const theirS = theirEx?.score ?? 0
+                const iWin = myS > 0 && myS >= theirS
+                const theyWin = theirS > 0 && theirS > myS
+                return (
+                  <tr key={name} className="border-t border-border">
+                    <td className="px-3 py-1.5 font-medium text-foreground">{name}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                      {myEx ? `${myEx.total_reps}` : theirEx ? `${theirEx.total_reps}` : '—'}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                      {myEx ? `${(myEx.total_weight_kg ?? 0).toFixed(0)} kg` : theirEx ? `${(theirEx.total_weight_kg ?? 0).toFixed(0)} kg` : '—'}
+                    </td>
+                    <td className={cn('px-3 py-1.5 text-right tabular-nums font-semibold', iWin ? 'text-[color:var(--success)]' : 'text-muted-foreground')}>
+                      {myS > 0 ? myS.toFixed(0) : '—'}
+                    </td>
+                    <td className={cn('px-3 py-1.5 text-right tabular-nums font-semibold', theyWin ? 'text-[color:var(--success)]' : 'text-muted-foreground')}>
+                      {theirS > 0 ? theirS.toFixed(0) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        )
+      })()}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SessionSummaryPage({
@@ -174,8 +304,11 @@ export default function SessionSummaryPage({
   params: Promise<{ sessionId: string }>
 }) {
   const router = useRouter()
+  const { t } = useI18n()
   const { sessionId } = use(params)
   const { data: session, isLoading, isError } = useSession(sessionId)
+  const { data: battle } = useSessionBattle(sessionId)
+  const currentUser = useAuthStore((s) => s.user)
 
   if (isLoading) return <PageSkeleton />
 
@@ -183,12 +316,12 @@ export default function SessionSummaryPage({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
         <Dumbbell className="size-10 text-muted-foreground/40" />
-        <p className="font-semibold text-foreground">Session not found</p>
+        <p className="font-semibold text-foreground">{t.battle.sessionNotFound}</p>
         <p className="text-sm text-muted-foreground">
-          This session does not exist or you don&apos;t have access to it.
+          {t.battle.sessionNotFoundDesc}
         </p>
         <Button variant="outline" onClick={() => router.push('/logs/history')}>
-          Back to history
+          {t.battle.backToHistory}
         </Button>
       </div>
     )
@@ -217,7 +350,7 @@ export default function SessionSummaryPage({
             {session.name}
           </h1>
           <p className="text-xs text-muted-foreground">
-            Completed ·{' '}
+            {t.battle.completed} ·{' '}
             {new Date(session.started_at).toLocaleDateString('en-US', {
               weekday: 'short',
               month: 'short',
@@ -229,10 +362,26 @@ export default function SessionSummaryPage({
       </header>
 
       <main className="flex-1 space-y-6 p-6">
+        {/* Battle result — shown when session was part of a battle */}
+        {battle && (battle.status === 'finished' || battle.status === 'active') && (() => {
+          const me: BattleParticipant =
+            battle.opponent?.athlete_id === currentUser?.id
+              ? battle.opponent!
+              : battle.initiator
+          const them: BattleParticipant | null =
+            me.athlete_id === battle.initiator.athlete_id
+              ? battle.opponent
+              : battle.initiator
+          if (!them) return null
+          return (
+            <BattleResultCard me={me} them={them} status={battle.status} />
+          )
+        })()}
+
         {/* Summary stat cards */}
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard
-            label="Duration"
+            label={t.battle.statDuration}
             value={
               summary?.duration_seconds != null
                 ? formatDuration(summary.duration_seconds)
@@ -240,7 +389,7 @@ export default function SessionSummaryPage({
             }
           />
           <StatCard
-            label="Total volume"
+            label={t.battle.statVolume}
             value={
               summary != null
                 ? `${summary.total_volume_kg.toLocaleString()} kg`
@@ -248,11 +397,11 @@ export default function SessionSummaryPage({
             }
           />
           <StatCard
-            label="Working sets"
+            label={t.battle.statWorkingSets}
             value={summary != null ? String(summary.working_sets_count) : '—'}
           />
           <StatCard
-            label="Exercises"
+            label={t.battle.statExercises}
             value={summary != null ? String(summary.exercises_count) : '—'}
           />
         </div>
@@ -261,7 +410,7 @@ export default function SessionSummaryPage({
         {hasSets && Object.keys(setsByType).length > 0 && (
           <div>
             <p className="mb-3 text-sm font-semibold text-foreground">
-              Sets by type
+              {t.battle.setsByType}
             </p>
             <div className="flex flex-wrap gap-2">
               {Object.entries(setsByType).map(([type, count]) => (
@@ -279,7 +428,7 @@ export default function SessionSummaryPage({
         {/* Exercise list */}
         <div>
           <p className="mb-3 text-sm font-semibold text-foreground">
-            Exercises logged
+            {t.battle.exercisesLogged}
           </p>
           {session.logged_exercises.length > 0 ? (
             <div className="flex flex-col gap-3">
@@ -291,7 +440,7 @@ export default function SessionSummaryPage({
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <Dumbbell className="size-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
-                No exercises were logged for this session.
+                {t.battle.noExercisesLogged}
               </p>
             </div>
           )}
@@ -300,13 +449,13 @@ export default function SessionSummaryPage({
         {/* Bottom CTA */}
         <div className="flex flex-wrap gap-3 pt-2">
           <Button onClick={() => router.push('/logs/new')}>
-            Start another workout
+            {t.battle.startAnother}
           </Button>
           <Button
             variant="outline"
             onClick={() => router.push('/logs/history')}
           >
-            View all sessions
+            {t.battle.viewAll}
           </Button>
         </div>
       </main>

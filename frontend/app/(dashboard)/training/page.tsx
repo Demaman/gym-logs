@@ -34,7 +34,9 @@ import { usePrograms, useCreateProgram, useAssignProgram, useDeleteProgram, useA
 import { addExerciseToDay, addPrescribedSet, replacePrescribedSets, updateProgramExercise, previewProgramHtml } from '@/lib/api/training'
 import { useStartSession } from '@/hooks/logs/use-start-session'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
-import { deleteSession } from '@/lib/api/logs'
+import { useAthleteActiveSession } from '@/hooks/logs/use-athlete-active-session'
+import { deleteSession, startAthleteSession } from '@/lib/api/logs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useExerciseSearch } from '@/hooks/training/use-exercises'
 import { useMyMemberships } from '@/hooks/identity/use-memberships'
 import { useMyOrganization } from '@/hooks/identity/use-settings'
@@ -759,34 +761,71 @@ interface ClientRowProps {
 }
 
 function ClientRow({ athlete, programCount, selected, onSelect }: ClientRowProps) {
+  const router = useRouter()
+  const { t } = useI18n()
   const initials = athlete.athlete_email.slice(0, 2).toUpperCase()
+  const { data: activeSession } = useAthleteActiveSession(athlete.athlete_id)
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/50',
-        selected && 'bg-accent',
-      )}
-    >
-      {selected && (
-        <span
-          className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
-          aria-hidden
-        />
-      )}
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
-        {initials}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={cn('truncate text-sm font-medium', selected ? 'text-primary' : 'text-foreground')}>
-          {athlete.athlete_email}
-        </p>
-        <p className="text-[10px] text-muted-foreground">
-          {programCount} program{programCount !== 1 ? 's' : ''}
-        </p>
+    <TooltipProvider delayDuration={300}>
+      <div className="relative flex w-full items-center">
+        <button
+          type="button"
+          onClick={onSelect}
+          className={cn(
+            'relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/50',
+            selected && 'bg-accent',
+          )}
+        >
+          {selected && (
+            <span
+              className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
+              aria-hidden
+            />
+          )}
+          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+            {initials}
+            {activeSession && (
+              <span
+                className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-background bg-[color:var(--success)] animate-pulse"
+                aria-hidden
+              />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={cn('truncate text-sm font-medium', selected ? 'text-primary' : 'text-foreground')}>
+              {athlete.athlete_email}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {activeSession
+                ? <span className="text-[color:var(--success)] font-medium">{t.training.trainingNow}</span>
+                : <>{programCount} program{programCount !== 1 ? 's' : ''}</>
+              }
+            </p>
+          </div>
+        </button>
+
+        {/* Quick-resume shortcut — only visible when athlete has active session */}
+        {activeSession && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={t.training.resumeSession}
+                onClick={(e) => { e.stopPropagation(); router.push(`/logs/${activeSession.id}`) }}
+                className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[color:var(--success)] transition-colors hover:bg-[color:var(--success)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Play className="size-3.5 fill-current" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p className="font-medium">{t.training.trainingInProgress}</p>
+              <p className="text-muted-foreground">{activeSession.name}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
-    </button>
+    </TooltipProvider>
   )
 }
 
@@ -805,19 +844,21 @@ function AssignedProgramCard({ program, onSelect, onRemove, isRemoving }: Assign
   const exCount = totalExercises(program)
 
   return (
-    <div className="rounded-xl border border-border bg-card">
-      <div className="flex items-center gap-3 px-4 py-3">
+    <div className="rounded-xl border border-border bg-card transition-shadow hover:shadow-sm">
+      <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
           onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-col items-start text-left"
+          className="group/card flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <p className="text-sm font-semibold text-foreground">{program.name}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {dayCount} day{dayCount !== 1 ? 's' : ''} · {exCount} exercise{exCount !== 1 ? 's' : ''}
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground group-hover/card:text-primary">{program.name}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {dayCount} day{dayCount !== 1 ? 's' : ''} · {exCount} exercise{exCount !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover/card:translate-x-0.5 group-hover/card:text-primary" aria-hidden />
         </button>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <button
           type="button"
           aria-label={`Remove ${program.name}`}
@@ -1057,11 +1098,13 @@ interface ProgramDetailProps {
   /** Called when user taps "back"; label changes based on context */
   onBack?: () => void
   backLabel?: string
+  /** When set, this ProgramDetail is being used to start a session for an athlete (trainer flow) */
+  athleteId?: string
 }
 
 function ProgramDetail({
   program, exerciseMap, allExercises, canEdit, currentUserId, role, athletes,
-  onDeleteProgram, onDeleteDay, onDeleteExercise, onAddDay, onBack, backLabel,
+  onDeleteProgram, onDeleteDay, onDeleteExercise, onAddDay, onBack, backLabel, athleteId,
 }: ProgramDetailProps) {
   const { t } = useI18n()
   const [startingDayId, setStartingDayId] = useState<string | null>(null)
@@ -1079,6 +1122,7 @@ function ProgramDetail({
   const startSession = useStartSession()
   const queryClient = useQueryClient()
   const activeSession = useActiveSession()
+  const athleteActiveSession = useAthleteActiveSession(athleteId)
   const assignProgram = useAssignProgram()
   const updateProgram = useUpdateProgram()
 
@@ -1181,12 +1225,18 @@ function ProgramDetail({
     setStartingDayId(day.id)
     setActiveSessionConflict(false)
     try {
-      const session = await startSession.mutateAsync({
-        mode: 'program_driven',
+      const payload = {
+        mode: 'program_driven' as const,
         program_day_id: day.id,
         name: day.name,
         day_tag: day.day_tag,
-      })
+      }
+      const session = athleteId
+        ? await startAthleteSession(athleteId, payload)
+        : await startSession.mutateAsync(payload)
+      if (athleteId) {
+        await queryClient.invalidateQueries({ queryKey: ['logs', 'athlete-active', athleteId] })
+      }
       router.push(`/logs/${session.id}`)
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status
@@ -1242,6 +1292,25 @@ function ProgramDetail({
             <ArrowLeft className="size-4" aria-hidden />
             {backLabel ?? t.training.myPrograms}
           </button>
+        </div>
+      )}
+
+      {/* Athlete active session banner — shown when trainer has selected an athlete and that athlete has an ongoing session */}
+      {athleteId && athleteActiveSession.data && (
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-accent/40 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Play className="size-4 shrink-0 text-primary" aria-hidden />
+            <p className="text-sm font-medium text-foreground">
+              {athleteActiveSession.data.name}
+              <span className="ml-1.5 text-muted-foreground font-normal">{t.logs.activeSession}</span>
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => router.push(`/logs/${athleteActiveSession.data!.id}`)}
+          >
+            {t.logs.continueSession}
+          </Button>
         </div>
       )}
 
@@ -2195,6 +2264,7 @@ export default function TrainingPage() {
                 : () => setMobileView('list')
               }
               backLabel={selectedAthlete?.athlete_email ?? t.training.myPrograms}
+              athleteId={selectedAthleteId ?? undefined}
             />
           )}
         </div>

@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Dumbbell, Flame, Trophy, Calendar, ChevronRight, Plus, TrendingUp, ClipboardList, Users, Timer, Trash2, Loader2 } from 'lucide-react'
+import { Dumbbell, Flame, Trophy, Calendar, ChevronRight, Plus, TrendingUp, ClipboardList, Users, Timer, Trash2, Loader2, Swords } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/hooks/use-role'
 import { useActiveSession } from '@/hooks/logs/use-active-session'
+import { useAthleteActiveSession } from '@/hooks/logs/use-athlete-active-session'
 import { useDiscardSession } from '@/hooks/logs/use-discard-session'
 import { useI18n } from '@/providers/i18n-provider'
 import { useAuthStore } from '@/lib/auth/store'
 import { useMyOrganization } from '@/hooks/identity/use-settings'
-import { useMyTrainer } from '@/hooks/identity/use-memberships'
+import { useMyTrainer, useMyMemberships } from '@/hooks/identity/use-memberships'
 import { Skeleton } from '@/components/ui/skeleton'
+import { BattleJoinModal } from '@/components/logs/battle-join-modal'
 
 // ── Count-up timer helpers ────────────────────────────────────────────────────
 
@@ -301,6 +303,7 @@ function AthleteView() {
   const { t } = useI18n()
   const user = useAuthStore((s) => s.user)
   const [discardOpen, setDiscardOpen] = useState(false)
+  const [joinBattleOpen, setJoinBattleOpen] = useState(false)
   const discard = useDiscardSession(activeSession?.id ?? '')
   const startedAt = activeSession ? new Date(activeSession.started_at) : null
   const elapsed = useCountUp(startedAt)
@@ -354,13 +357,19 @@ function AthleteView() {
           <h1 className="text-base font-semibold text-foreground">{t.logs.title}</h1>
           <p className="text-xs text-muted-foreground">{t.logs.subtitle}</p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => router.push('/logs/new')}>
-          <Plus className="size-4" aria-hidden />
-          <span className="hidden sm:inline">{t.logs.logWorkout}</span>
-          <span className="sm:hidden">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setJoinBattleOpen(true)}>
+            <Swords className="size-4" aria-hidden />
+            <span className="hidden sm:inline">{t.battle.joinBattle}</span>
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => router.push('/logs/new')}>
             <Plus className="size-4" aria-hidden />
-          </span>
-        </Button>
+            <span className="hidden sm:inline">{t.logs.logWorkout}</span>
+            <span className="sm:hidden">
+              <Plus className="size-4" aria-hidden />
+            </span>
+          </Button>
+        </div>
       </header>
       <main className="flex-1 space-y-6 p-4 md:p-6">
         <div>
@@ -450,12 +459,40 @@ function AthleteView() {
           </div>
         </div>
       </main>
+      <BattleJoinModal open={joinBattleOpen} onClose={() => setJoinBattleOpen(false)} />
+    </div>
+  )
+}
+
+// One row per athlete — only renders when that athlete has an active session
+function LiveAthleteRow({ athleteId, email }: { athleteId: string; email: string }) {
+  const { t } = useI18n()
+  const router = useRouter()
+  const { data: session } = useAthleteActiveSession(athleteId)
+  const elapsed = useCountUp(session ? new Date(session.started_at) : null)
+  if (!session) return null
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--success)]/30 bg-[color:var(--success)]/5 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="size-2 shrink-0 rounded-full bg-[color:var(--success)] animate-pulse" />
+        <div>
+          <p className="text-sm font-semibold text-foreground">{email}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Timer className="size-3" aria-hidden />
+            {session.name} · {formatCountUp(elapsed)}
+          </p>
+        </div>
+      </div>
+      <Button size="sm" onClick={() => router.push(`/logs/${session.id}`)}>
+        {t.logs.continueSession}
+      </Button>
     </div>
   )
 }
 
 function TrainerView() {
   const { t } = useI18n()
+  const { data: myAthletes = [] } = useMyMemberships()
 
   const TRAINER_STATS: StatDatum[] = [
     {
@@ -504,6 +541,19 @@ function TrainerView() {
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           {TRAINER_STATS.map((s) => <StatCard key={s.label} {...s} />)}
         </div>
+
+        {/* Live sessions — athletes currently training */}
+        {myAthletes.length > 0 && (
+          <div>
+            <p className="mb-3 text-sm font-semibold text-foreground">{t.logs.liveSessions}</p>
+            <div className="flex flex-col gap-2">
+              {myAthletes.map((m) => (
+                <LiveAthleteRow key={m.athlete_id} athleteId={m.athlete_id} email={m.athlete_email} />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t.logs.recentSessions}</p>

@@ -1,6 +1,7 @@
 import type {
   Invite,
   InviteRequest,
+  MemberHealth,
   MembershipEnriched,
   OrgLookup,
   Organization,
@@ -113,6 +114,13 @@ export async function updateMyOrganization(
   const { data } = await api.patch<Organization>(
     '/api/v1/identity/organizations/current',
     payload,
+  )
+  return data
+}
+
+export async function getMemberHealth(): Promise<MemberHealth[]> {
+  const { data } = await api.get<MemberHealth[]>(
+    '/api/v1/identity/organizations/current/member-health',
   )
   return data
 }

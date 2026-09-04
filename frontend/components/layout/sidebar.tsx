@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -14,6 +15,10 @@ import {
   Settings,
   Languages,
   HeartPulse,
+  Activity,
+  CalendarCheck,
+  ChevronDown,
+  Swords,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/auth/store'
@@ -23,30 +28,52 @@ import { InviteBellBadge } from '@/components/layout/invite-banner'
 import type { Locale } from '@/lib/i18n'
 import type { Role } from '@/hooks/use-role'
 
-// ── Nav items per role ─────────────────────────────────────────────────────────
+// ── Nav types ─────────────────────────────────────────────────────────────────
 
-type NavItem = { href: string; labelKey: keyof ReturnType<typeof useI18n>['t']['nav']; icon: React.ElementType }
+type NavKey = keyof ReturnType<typeof useI18n>['t']['nav']
 
-const NAV_BY_ROLE: Record<Role, NavItem[]> = {
+type NavItem = {
+  kind?: 'item'
+  href: string
+  labelKey: NavKey
+  icon: React.ElementType
+}
+
+type NavGroup = {
+  kind: 'group'
+  labelKey: NavKey
+  icon: React.ElementType
+  children: NavItem[]
+}
+
+type NavEntry = NavItem | NavGroup
+
+// ── Nav items per role ────────────────────────────────────────────────────────
+
+const NAV_BY_ROLE: Record<Role, NavEntry[]> = {
   athlete: [
-    { href: '/logs',      labelKey: 'logs',      icon: Dumbbell       },
-    { href: '/training',  labelKey: 'training',  icon: BookOpen       },
-    { href: '/health',    labelKey: 'health',    icon: HeartPulse     },
-    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp     },
+    { href: '/logs',          labelKey: 'logs',          icon: Dumbbell   },
+    { href: '/training',      labelKey: 'training',      icon: BookOpen   },
+    { href: '/health',        labelKey: 'health',        icon: HeartPulse },
+    { href: '/analytics',     labelKey: 'analytics',     icon: TrendingUp },
+    { href: '/logs/battles',  labelKey: 'battleHistory', icon: Swords     },
   ],
   trainer: [
-    { href: '/logs',      labelKey: 'logs',      icon: ClipboardList  },
-    { href: '/athletes',  labelKey: 'athletes',  icon: Users          },
-    { href: '/training',  labelKey: 'programs',  icon: BookOpen       },
-    { href: '/health',    labelKey: 'health',    icon: HeartPulse     },
-    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp     },
+    { href: '/overview',       labelKey: 'overview',     icon: LayoutDashboard },
+    { href: '/logs',           labelKey: 'logs',         icon: ClipboardList   },
+    { href: '/athletes',       labelKey: 'athletes',     icon: Users           },
+    { href: '/member-health',  labelKey: 'memberHealth', icon: Activity        },
+    { href: '/training',       labelKey: 'programs',     icon: BookOpen        },
+    { href: '/analytics',      labelKey: 'analytics',    icon: TrendingUp      },
   ],
   gym_admin: [
-    { href: '/overview',  labelKey: 'overview',  icon: LayoutDashboard },
-    { href: '/trainers',  labelKey: 'trainers',  icon: UserCheck       },
-    { href: '/athletes',  labelKey: 'athletes',  icon: Users           },
-    { href: '/training',  labelKey: 'training',  icon: BookOpen        },
-    { href: '/analytics', labelKey: 'analytics', icon: TrendingUp      },
+    { href: '/overview',      labelKey: 'overview',     icon: LayoutDashboard },
+    { href: '/trainers',      labelKey: 'trainers',     icon: UserCheck       },
+    { href: '/athletes',      labelKey: 'athletes',     icon: Users           },
+    { href: '/member-health', labelKey: 'memberHealth', icon: Activity        },
+    { href: '/attendance',    labelKey: 'attendance',   icon: CalendarCheck   },
+    { href: '/training',      labelKey: 'training',     icon: BookOpen        },
+    { href: '/analytics',     labelKey: 'analytics',    icon: TrendingUp      },
   ],
 }
 
@@ -90,6 +117,86 @@ function LanguageSwitcher() {
   )
 }
 
+// ── Nav group (collapsible) ───────────────────────────────────────────────────
+
+function NavGroupItem({
+  group,
+  pathname,
+  t,
+}: {
+  group: NavGroup
+  pathname: string
+  t: ReturnType<typeof useI18n>['t']
+}) {
+  const anyChildActive = group.children.some(
+    (c) => pathname === c.href || pathname.startsWith(c.href + '/'),
+  )
+  const [open, setOpen] = useState(anyChildActive)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors duration-150',
+          anyChildActive
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+        )}
+      >
+        {anyChildActive && (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+        )}
+        <group.icon
+          className={cn(
+            'size-4 shrink-0 transition-colors',
+            anyChildActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+          )}
+          aria-hidden
+        />
+        <span className="flex-1 text-left">{t.nav[group.labelKey]}</span>
+        <ChevronDown
+          className={cn(
+            'size-3.5 shrink-0 transition-transform duration-200',
+            open ? 'rotate-180' : '',
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
+          {group.children.map(({ href, labelKey, icon: Icon }) => {
+            const active = pathname === href || pathname.startsWith(href + '/')
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'flex h-9 items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition-colors duration-150',
+                  active
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                )}
+              >
+                <Icon
+                  className={cn(
+                    'size-3.5 shrink-0',
+                    active ? 'text-primary' : 'text-muted-foreground',
+                  )}
+                  aria-hidden
+                />
+                {t.nav[labelKey]}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
@@ -102,20 +209,25 @@ export function Sidebar() {
   const role        = (user?.role ?? 'athlete') as Role
   const roleLabel   = t.roles[role] ?? t.roles.athlete
   const email       = user?.email ?? 'user@example.com'
-  const navItems    = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.athlete
+  const navEntries  = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.athlete
+  const homeHref    = role === 'athlete' ? '/logs' : '/overview'
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-card">
 
       {/* ── Logo ─────────────────────────────────────────────────────── */}
-      <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
+      <Link
+        href={homeHref}
+        className="flex h-16 items-center gap-2.5 border-b border-border px-5 transition-opacity hover:opacity-80"
+        aria-label="gym-logs home"
+      >
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-white" aria-hidden>
             <path d="M6 4h2v16H6V4zm10 0h2v16h-2V4zM3 11h18v2H3v-2z" fill="currentColor" />
           </svg>
         </span>
         <span className="text-base font-bold tracking-tight text-foreground">gym-logs</span>
-      </div>
+      </Link>
 
       {/* ── Navigation ───────────────────────────────────────────────── */}
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
@@ -123,7 +235,18 @@ export function Sidebar() {
           {t.nav.menu}
         </p>
 
-        {navItems.map(({ href, labelKey, icon: Icon }) => {
+        {navEntries.map((entry) => {
+          if (entry.kind === 'group') {
+            return (
+              <NavGroupItem
+                key={entry.labelKey}
+                group={entry}
+                pathname={pathname}
+                t={t}
+              />
+            )
+          }
+          const { href, labelKey, icon: Icon } = entry
           const active = pathname === href || pathname.startsWith(href + '/')
           const label = t.nav[labelKey]
           return (
@@ -137,7 +260,6 @@ export function Sidebar() {
                   : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
               )}
             >
-              {/* Active indicator bar */}
               {active && (
                 <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
               )}
