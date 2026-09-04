@@ -239,3 +239,64 @@ async def test_gym_admin_lists_org_trainers(client: AsyncClient) -> None:
 async def test_list_memberships_requires_auth(client: AsyncClient) -> None:
     resp = await client.get("/api/v1/identity/memberships/mine")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_gym_admin_who_is_trainer_removes_athlete_clears_org(client: AsyncClient) -> None:
+    """Regression: gym_admin who is also the trainer_id on the membership must still
+    clear the athlete's organization_id, enabling re-invitation later."""
+    org_id = await _make_org(client, "AdminTrainer Gym")
+    admin_id = await _register(client, "adm_trn@atg.com", role="gym_admin", org_id=org_id)
+    a_id = await _register(client, "adm_ath@atg.com", role="athlete", org_id=org_id)
+    admin_token = await _login(client, "adm_trn@atg.com")
+
+    # Admin creates a membership where they are the trainer
+    m_resp = await client.post(
+        "/api/v1/identity/memberships",
+        json={"trainer_id": admin_id, "athlete_id": a_id},
+        headers=_auth(admin_token),
+    )
+    assert m_resp.status_code == 201, m_resp.text
+    m_id = m_resp.json()["id"]
+
+    # Admin removes the athlete via the membership endpoint
+    del_resp = await client.delete(
+        f"/api/v1/identity/memberships/{m_id}", headers=_auth(admin_token)
+    )
+    assert del_resp.status_code == 204
+
+    # Now re-invite — must succeed (athlete's org was cleared)
+    invite_resp = await client.post(
+        "/api/v1/identity/invites",
+        json={"email": "adm_ath@atg.com", "role": "athlete"},
+        headers=_auth(admin_token),
+    )
+    assert invite_resp.status_code == 201, invite_resp.text
+
+
+@pytest.mark.asyncio
+async def test_gym_admin_list_athletes_returns_all_org_athletes(client: AsyncClient) -> None:
+    """gym_admin sees all athletes in the org, including those with no trainer link."""
+    org_id = await _make_org(client, "AllAthletes Gym")
+    await _register(client, "admin@aa.com", role="gym_admin", org_id=org_id)
+    # Athlete with no trainer
+    await _register(client, "free@aa.com", role="athlete", org_id=org_id)
+    # Athlete linked to a trainer
+    t_id = await _register(client, "trainer@aa.com", role="trainer", org_id=org_id)
+    a_id = await _register(client, "linked@aa.com", role="athlete", org_id=org_id)
+    t_token = await _login(client, "trainer@aa.com")
+    admin_token = await _login(client, "admin@aa.com")
+    await client.post(
+        "/api/v1/identity/memberships",
+        json={"trainer_id": t_id, "athlete_id": a_id},
+        headers=_auth(t_token),
+    )
+
+    resp = await client.get("/api/v1/identity/members/athletes", headers=_auth(admin_token))
+    assert resp.status_code == 200
+    emails = {u["email"] for u in resp.json()}
+    assert "free@aa.com" in emails
+    assert "linked@aa.com" in emails
+    # Trainer and admin should not appear
+    assert "trainer@aa.com" not in emails
+    assert "admin@aa.com" not in emails

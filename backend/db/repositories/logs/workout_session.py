@@ -115,6 +115,47 @@ class WorkoutSessionRepository:
         await self._s.delete(session)
         await self._s.commit()
 
+    async def get_by_id_any(self, session_id: uuid.UUID) -> WorkoutSession | None:
+        """Fetch a session by ID without org or athlete scope. Used by battle service."""
+        result = await self._s.execute(
+            select(WorkoutSession).where(WorkoutSession.id == session_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id_in_org(
+        self,
+        session_id: uuid.UUID,
+        *,
+        organization_id: uuid.UUID,
+    ) -> WorkoutSession | None:
+        result = await self._s.execute(
+            select(WorkoutSession).where(
+                WorkoutSession.id == session_id,
+                WorkoutSession.organization_id == organization_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_last_finished_for_athlete(
+        self,
+        *,
+        athlete_id: uuid.UUID,
+        organization_id: uuid.UUID | None,
+    ) -> WorkoutSession | None:
+        conditions = [
+            WorkoutSession.athlete_id == athlete_id,
+            WorkoutSession.finished_at.is_not(None),
+        ]
+        if organization_id is not None:
+            conditions.append(WorkoutSession.organization_id == organization_id)
+        result = await self._s.execute(
+            select(WorkoutSession)
+            .where(*conditions)
+            .order_by(WorkoutSession.started_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def get_progress_stats(
         self,
         *,

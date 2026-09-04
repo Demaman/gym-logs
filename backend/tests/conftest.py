@@ -11,9 +11,12 @@ import db.models.analytics  # noqa: F401
 import db.models.identity  # noqa: F401
 import db.models.logs  # noqa: F401
 import db.models.training  # noqa: F401
+import core.database as _core_db
 from core.config import settings
 from core.database import Base, get_db
+from core.events import subscribe
 from main import app
+from modules.logs.events import on_session_finished_record_attendance, on_session_finished_resolve_battle
 
 _TEST_DB_URL = (
     settings.test_database_url
@@ -35,7 +38,14 @@ async def test_engine():
             await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
             await conn.execute(text(f"CREATE SCHEMA {schema}"))
         await conn.run_sync(Base.metadata.create_all)
+    # Patch AsyncSessionLocal so event handlers (which bypass get_db) use the test DB.
+    _orig_session_local = _core_db.AsyncSessionLocal
+    _core_db.AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    # Register event handlers that the lifespan would normally register.
+    subscribe("workout_session.finished", on_session_finished_record_attendance)
+    subscribe("workout_session.finished", on_session_finished_resolve_battle)
     yield engine
+    _core_db.AsyncSessionLocal = _orig_session_local
     async with engine.begin() as conn:
         for schema in ("identity", "training", "logs", "analytics"):
             await conn.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))

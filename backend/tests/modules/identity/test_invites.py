@@ -271,3 +271,41 @@ async def test_athlete_declines_invite(client: AsyncClient) -> None:
     # Athlete still has no org
     me_resp = await client.get("/api/v1/identity/users/me", headers=_auth(athlete_token))
     assert me_resp.json()["organization_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_gym_admin_reinvites_removed_athlete_links_directly(client: AsyncClient) -> None:
+    """Regression: gym_admin re-adding an athlete who was previously removed must link
+    them immediately — no pending-invite/accept step required."""
+    org_id = await _make_org(client, "Relink Gym")
+    await _register(client, "admin@rl.com", role="gym_admin", org_id=org_id)
+    await _register(client, "ath@rl.com", role="athlete", org_id=org_id)
+    admin_token = await _login(client, "admin@rl.com")
+    ath_token = await _login(client, "ath@rl.com")
+
+    # Find and delete the athlete's org link via memberships endpoint isn't needed here;
+    # directly simulate the removal by clearing org via leave_organization on the athlete side,
+    # then have admin re-invite.
+    leave_resp = await client.post(
+        "/api/v1/identity/members/leave",
+        headers=_auth(ath_token),
+    )
+    assert leave_resp.status_code == 204
+
+    # Admin re-invites the now-orgless athlete
+    invite_resp = await client.post(
+        "/api/v1/identity/invites",
+        json={"email": "ath@rl.com", "role": "athlete"},
+        headers=_auth(admin_token),
+    )
+    assert invite_resp.status_code == 201, invite_resp.text
+    data = invite_resp.json()
+    # accepted_at is set — means the link happened immediately, no pending invite
+    assert data["accepted_at"] is not None
+
+    # Athlete is now back in the org
+    me_resp = await client.get("/api/v1/identity/users/me", headers=_auth(ath_token))
+    # JWT is stale but DB is updated; we verify via a fresh login
+    fresh_token = await _login(client, "ath@rl.com")
+    me_resp2 = await client.get("/api/v1/identity/users/me", headers=_auth(fresh_token))
+    assert me_resp2.json()["organization_id"] == org_id
