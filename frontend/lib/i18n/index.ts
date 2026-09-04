@@ -21,4 +21,4 @@ export function getTranslations(locale: Locale): Translations {
 }
 
 export const LOCALE_STORAGE_KEY = 'gym-logs-locale'
-export const DEFAULT_LOCALE: Locale = 'en'
+export const DEFAULT_LOCALE: Locale = 'pt-BR'

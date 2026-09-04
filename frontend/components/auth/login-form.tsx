@@ -21,32 +21,34 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { useLogin } from '@/hooks/use-login'
+import { useI18n } from '@/providers/i18n-provider'
 import type { ApiError } from '@/types/api'
 
-const loginSchema = z.object({
-  email:    z.string().email('Enter a valid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-})
-
-type LoginInput = z.infer<typeof loginSchema>
-
-function getErrorMessage(error: AxiosError<ApiError> | null): string | null {
-  if (!error) return null
-  if (error.response?.status === 401) return 'Invalid email or password. Please check your credentials.'
-  if (error.response?.status === 422) return 'Please check your email and password and try again.'
-  if (!error.response) return 'Unable to connect. Check your internet connection and try again.'
-  return 'Something went wrong. Please try again.'
-}
-
 export function LoginForm() {
+  const { t } = useI18n()
+  const a = t.auth
+
+  const loginSchema = z.object({
+    email:    z.string().email(a.emailError),
+    password: z.string().min(8, a.passwordError),
+  })
+  type LoginInput = z.infer<typeof loginSchema>
+
   const [showPassword, setShowPassword] = useState(false)
   const { mutate: login, isPending, error } = useLogin()
+
+  function getErrorMessage(err: AxiosError<ApiError> | null): string | null {
+    if (!err) return null
+    if (err.response?.status === 401) return a.error401
+    if (err.response?.status === 422) return a.error422
+    if (!err.response) return a.errorNetwork
+    return a.errorGeneric
+  }
   const errorMessage = getErrorMessage(error as AxiosError<ApiError> | null)
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
-    // H5: validate on submit first, then re-validate on change after first attempt
     mode: 'onSubmit',
     reValidateMode: 'onChange',
   })
@@ -59,7 +61,7 @@ export function LoginForm() {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
 
-        {/* H9: Error alert — includes "Forgot password?" recovery link adjacent to error */}
+        {/* Error alert with forgot-password recovery link */}
         {errorMessage && (
           <Alert variant="destructive">
             <AlertDescription>
@@ -68,20 +70,20 @@ export function LoginForm() {
                 href="/forgot-password"
                 className="font-semibold underline underline-offset-4 hover:opacity-80"
               >
-                Forgot your password?
+                {a.forgotPassword}
               </Link>
             </AlertDescription>
           </Alert>
         )}
 
-        {/* Email — H7: autofocus + autocomplete */}
+        {/* Email */}
         <FormField
           control={form.control}
           name="email"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Email <span className="text-destructive" aria-hidden>*</span>
+                {a.emailLabel} <span className="text-destructive" aria-hidden>*</span>
               </FormLabel>
               <FormControl>
                 <Input
@@ -89,9 +91,8 @@ export function LoginForm() {
                   type="email"
                   autoFocus
                   autoComplete="email"
-                  placeholder="you@example.com"
+                  placeholder={a.emailPlaceholder}
                   required
-                  // H5: validate email format on blur (not password — avoid premature errors)
                   onBlur={() => {
                     field.onBlur()
                     if (field.value) form.trigger('email')
@@ -103,14 +104,14 @@ export function LoginForm() {
           )}
         />
 
-        {/* Password — H4: show/hide toggle + H7: autocomplete */}
+        {/* Password */}
         <FormField
           control={form.control}
           name="password"
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Password <span className="text-destructive" aria-hidden>*</span>
+                {a.passwordLabel} <span className="text-destructive" aria-hidden>*</span>
               </FormLabel>
               <FormControl>
                 <div className="relative">
@@ -118,7 +119,7 @@ export function LoginForm() {
                     {...field}
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
-                    placeholder="••••••••"
+                    placeholder={a.passwordPlaceholder}
                     enterKeyHint="go"
                     required
                     className="pr-10"
@@ -126,7 +127,7 @@ export function LoginForm() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-label={showPassword ? a.hidePassword : a.showPassword}
                     tabIndex={-1}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                   >
@@ -136,13 +137,12 @@ export function LoginForm() {
                   </button>
                 </div>
               </FormControl>
-              <FormDescription>Must be at least 8 characters</FormDescription>
+              <FormDescription>{a.passwordHint}</FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        {/* H1: Loading; H5: also disable when form has known errors after first submit */}
         <Button
           type="submit"
           className="w-full"
@@ -151,21 +151,20 @@ export function LoginForm() {
           {isPending ? (
             <>
               <Loader2 className="animate-spin" aria-hidden />
-              Signing in…
+              {a.signingIn}
             </>
           ) : (
-            'Sign in'
+            a.submitButton
           )}
         </Button>
 
-        {/* H3 + H10: "Forgot password?" — shown when no auth error (error state includes it inline) */}
         {!errorMessage && (
           <p className="text-center text-sm text-muted-foreground">
             <Link
               href="/forgot-password"
               className="underline underline-offset-4 hover:text-foreground transition-colors"
             >
-              Forgot your password?
+              {a.forgotPassword}
             </Link>
           </p>
         )}
