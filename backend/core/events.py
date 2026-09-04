@@ -20,5 +20,10 @@ def subscribe(event_type: str, handler: Callable[[dict], Awaitable[None]]) -> No
 
 
 async def publish(event_type: str, payload: dict[str, Any]) -> None:
+    import logging
+    _log = logging.getLogger(__name__)
     for handler in _handlers.get(event_type, []):
-        asyncio.create_task(handler(payload))
+        try:
+            await handler(payload)
+        except Exception as exc:
+            _log.exception("Event handler %s failed: %s", handler.__name__, exc)
