@@ -1,3 +1,9 @@
+from modules.identity.schemas.member_health import MemberHealthResponse
+from modules.identity.schemas.api_key import (
+    ApiKeyCreate,
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
+)
 from modules.identity.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -19,6 +25,10 @@ from modules.identity.schemas.user import (
 )
 
 __all__ = [
+    "MemberHealthResponse",
+    "ApiKeyCreate",
+    "ApiKeyCreatedResponse",
+    "ApiKeyResponse",
     "OrgLookupResponse",
     "OrganizationCreate",
     "OrganizationResponse",

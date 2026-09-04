@@ -7,9 +7,13 @@ from core.auth import CurrentUser
 from core.database import get_db
 from core.redis import get_redis
 from modules.identity.schemas import (
+    ApiKeyCreate,
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
     InviteCreate,
     InviteResponse,
     LoginRequest,
+    MemberHealthResponse,
     MembershipCreate,
     MembershipResponse,
     OrgLookupResponse,
@@ -23,13 +27,17 @@ from modules.identity.schemas import (
     UserResponse,
     UserUpdate,
 )
-from modules.identity.services import IdentityService
+from modules.identity.services import ApiKeyService, IdentityService
 
 router = APIRouter(prefix="/identity", tags=["identity"])
 
 
 def _svc(db: AsyncSession = Depends(get_db)) -> IdentityService:
     return IdentityService(session=db, redis=get_redis())
+
+
+def _api_key_svc(db: AsyncSession = Depends(get_db)) -> ApiKeyService:
+    return ApiKeyService(db)
 
 
 @router.post("/organizations", response_model=OrganizationResponse, status_code=201)
@@ -86,6 +94,13 @@ async def get_my_organization(current_user: CurrentUser, svc: IdentityService = 
 @router.patch("/organizations/current", response_model=OrganizationResponse)
 async def update_my_organization(data: OrganizationUpdate, current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> OrganizationResponse:
     return await svc.update_my_organization(current_user, data)
+
+
+@router.get("/organizations/current/member-health", response_model=list[MemberHealthResponse])
+async def get_member_health(
+    current_user: CurrentUser, svc: IdentityService = Depends(_svc)
+) -> list[MemberHealthResponse]:
+    return await svc.get_member_health(current_user)
 
 
 @router.get("/members/trainers", response_model=list[UserResponse])
@@ -160,3 +175,34 @@ async def decline_invite(invite_id: uuid.UUID, current_user: CurrentUser, svc: I
 @router.delete("/invites/{invite_id}", status_code=204)
 async def delete_invite(invite_id: uuid.UUID, current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> None:
     await svc.delete_invite(current_user, invite_id)
+
+
+# ---------------------------------------------------------------------------
+# API key endpoints (gym_admin only)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
+async def create_api_key(
+    data: ApiKeyCreate,
+    current_user: CurrentUser,
+    svc: ApiKeyService = Depends(_api_key_svc),
+) -> ApiKeyCreatedResponse:
+    return await svc.create(current_user, data)
+
+
+@router.get("/api-keys", response_model=list[ApiKeyResponse])
+async def list_api_keys(
+    current_user: CurrentUser,
+    svc: ApiKeyService = Depends(_api_key_svc),
+) -> list[ApiKeyResponse]:
+    return await svc.list_keys(current_user)
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+async def revoke_api_key(
+    key_id: uuid.UUID,
+    current_user: CurrentUser,
+    svc: ApiKeyService = Depends(_api_key_svc),
+) -> None:
+    await svc.revoke(current_user, key_id)

@@ -19,15 +19,21 @@ from core.security import (
 from db.constants.identity import Role
 from db.models.identity.membership import Membership
 from db.models.identity.user import User
+from core.api_key_auth import generate_api_key
 from db.repositories.identity import (
+    ApiKeyRepository,
     InviteRepository,
     MembershipRepository,
     OrganizationRepository,
     UserRepository,
 )
 from modules.identity.schemas import (
+    ApiKeyCreate,
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
     InviteCreate,
     InviteResponse,
+    MemberHealthResponse,
     MembershipCreate,
     MembershipResponse,
     OrgLookupResponse,
@@ -40,6 +46,8 @@ from modules.identity.schemas import (
     UserResponse,
     UserUpdate,
 )
+from modules.logs.services import SessionService as _LogsSessionService
+from modules.training.services import ProgramService as _ProgramService
 
 _REFRESH_TTL_SECONDS = 60 * 60 * 24 * 7
 _INVITE_TTL_DAYS = 7
@@ -66,6 +74,7 @@ def _enrich_membership(
 
 class IdentityService:
     def __init__(self, session: AsyncSession, redis: Redis) -> None:
+        self._session = session
         self._org_repo = OrganizationRepository(session)
         self._user_repo = UserRepository(session)
         self._membership_repo = MembershipRepository(session)
@@ -256,15 +265,80 @@ class IdentityService:
         return [UserResponse.model_validate(t) for t in trainers]
 
     async def list_athletes_for_trainer(self, user: CurrentUser) -> list[UserResponse]:
-        """Returns only athletes explicitly linked to this trainer via memberships."""
-        if user.get("role") not in Role.STAFF:
+        """Gym admin: all athletes in the org. Trainer: only membership-linked athletes."""
+        role = user.get("role")
+        if role not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers can list athletes")
-        trainer_id = self._uid(user)
         org_id = self._org_id(user)
+        if role == Role.GYM_ADMIN:
+            if not org_id:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
+            athletes = await self._user_repo.list_athletes_by_org(org_id)
+            return [UserResponse.model_validate(a) for a in athletes]
+        trainer_id = self._uid(user)
         memberships = await self._membership_repo.list_by_trainer(trainer_id, org_id)
         athlete_ids = [m.athlete_id for m in memberships]
         athletes = await self._user_repo.get_by_ids(athlete_ids)
         return [UserResponse.model_validate(a) for a in athletes]
+
+    async def get_member_health(self, user: CurrentUser) -> list[MemberHealthResponse]:
+        """Returns all athletes in the org annotated with activity status."""
+        role = user.get("role")
+        if role not in Role.STAFF:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers and admins can view member health")
+        org_id = self._org_id(user)
+        if not org_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
+
+        if role == Role.GYM_ADMIN:
+            athletes = await self._user_repo.list_athletes_by_org(org_id)
+        else:
+            trainer_id = self._uid(user)
+            memberships = await self._membership_repo.list_by_trainer(trainer_id, org_id)
+            athletes = await self._user_repo.get_by_ids([m.athlete_id for m in memberships])
+
+        logs_svc = _LogsSessionService(self._session)
+        training_svc = _ProgramService(self._session)
+        now = datetime.now(UTC)
+
+        results: list[MemberHealthResponse] = []
+        for athlete in athletes:
+            last_session_at = await logs_svc.get_last_session_at(
+                athlete_id=athlete.id, organization_id=org_id
+            )
+            active_programs = await training_svc.count_active_for_athlete(
+                athlete_id=athlete.id, organization_id=org_id
+            )
+            days_since = int((now - last_session_at).total_seconds() / 86400) if last_session_at else None
+            joined_at = athlete.created_at
+            days_since_joined = int((now - joined_at).total_seconds() / 86400)
+
+            if days_since_joined <= 7:
+                status_val = "new"
+            elif active_programs == 0:
+                status_val = "no_program"
+            elif last_session_at is None:
+                status_val = "dormant"
+            elif days_since <= 10:
+                status_val = "active"
+            elif days_since <= 30:
+                status_val = "at_risk"
+            else:
+                status_val = "dormant"
+
+            results.append(MemberHealthResponse(
+                user_id=athlete.id,
+                email=athlete.email,
+                joined_at=joined_at,
+                status=status_val,
+                last_session_at=last_session_at,
+                days_since_last_session=days_since,
+                active_program_count=active_programs,
+            ))
+
+        _STATUS_ORDER = {"new": 0, "at_risk": 1, "no_program": 2, "dormant": 3, "active": 4}
+        results.sort(key=lambda r: (_STATUS_ORDER.get(r.status, 5), r.email))
+        return results
 
     async def list_memberships_for_trainer(self, user: CurrentUser) -> list[MembershipResponse]:
         if user.get("role") not in Role.STAFF:
@@ -324,7 +398,7 @@ class IdentityService:
         is_admin = role == Role.GYM_ADMIN and membership.organization_id == org_id
         if not is_trainer_owner and not is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to delete this membership")
-        if is_admin and not is_trainer_owner:
+        if is_admin:
             # Gym admin removes athlete from the org entirely:
             # delete all trainer↔athlete memberships and clear org link.
             athlete = await self._user_repo.get_by_id(membership.athlete_id)
@@ -408,6 +482,22 @@ class IdentityService:
                 )
             if existing_user.organization_id is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, "User belongs to another organization")
+            # Existing user with no org: gym_admin links directly (no invite/accept step).
+            if user.get("role") == Role.GYM_ADMIN:
+                if existing_user.role not in (Role.ATHLETE, Role.TRAINER):
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST, "That user cannot be added as a member")
+                await self._user_repo.update(existing_user, organization_id=org_id)
+                org = await self._org_repo.get_by_id(org_id)
+                return InviteResponse(
+                    id=uuid.uuid4(),
+                    organization_id=org_id,
+                    organization_name=org.name if org else None,
+                    email=email,
+                    role=existing_user.role,
+                    expires_at=datetime.now(UTC),
+                    accepted_at=datetime.now(UTC),
+                    created_at=datetime.now(UTC),
+                )
 
         existing_invite = await self._invite_repo.get_pending_by_email_and_org(email, org_id)
         if existing_invite:
@@ -518,3 +608,58 @@ class IdentityService:
         if not is_inviter and not is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to cancel this invite")
         await self._invite_repo.delete(invite)
+
+
+# ---------------------------------------------------------------------------
+# API Key service
+# ---------------------------------------------------------------------------
+
+
+class ApiKeyService:
+    def __init__(self, session: AsyncSession) -> None:
+        self._repo = ApiKeyRepository(session)
+
+    def _require_admin(self, current_user: dict) -> uuid.UUID:
+        if current_user.get("role") != Role.GYM_ADMIN:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only gym admins can manage API keys",
+            )
+        org_id = current_user.get("organization_id")
+        if not org_id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "API keys require an organization context",
+            )
+        return uuid.UUID(org_id)
+
+    async def create(
+        self, current_user: dict, data: ApiKeyCreate
+    ) -> ApiKeyCreatedResponse:
+        org_id = self._require_admin(current_user)
+        user_id = uuid.UUID(current_user["user_id"])
+        plaintext, prefix, key_hash = generate_api_key()
+        key = await self._repo.create(
+            organization_id=org_id,
+            created_by_id=user_id,
+            name=data.name,
+            key_prefix=prefix,
+            key_hash=key_hash,
+            scopes=data.scopes,
+            expires_at=data.expires_at,
+        )
+        resp = ApiKeyCreatedResponse.model_validate(key)
+        resp.plaintext_key = plaintext
+        return resp
+
+    async def list_keys(self, current_user: dict) -> list[ApiKeyResponse]:
+        org_id = self._require_admin(current_user)
+        keys = await self._repo.list_for_org(org_id)
+        return [ApiKeyResponse.model_validate(k) for k in keys]
+
+    async def revoke(self, current_user: dict, key_id: uuid.UUID) -> None:
+        org_id = self._require_admin(current_user)
+        key = await self._repo.get_by_id(key_id, org_id)
+        if not key:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "API key not found")
+        await self._repo.revoke(key)
