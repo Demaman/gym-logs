@@ -5,6 +5,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str
     test_database_url: str = ""
+
+    @field_validator("database_url", "test_database_url", mode="before")
+    @classmethod
+    def normalize_db_url(cls, v: str) -> str:
+        if v and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
     redis_url: str
 
     secret_key: str
