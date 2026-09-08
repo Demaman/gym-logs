@@ -10,7 +10,7 @@ def get_redis() -> Redis:
     if _redis is None:
         kwargs: dict = {"decode_responses": True, "protocol": 2}
         if settings.redis_url.startswith("rediss://"):
-            kwargs["ssl_cert_reqs"] = None
+            kwargs["ssl_cert_reqs"] = "none"
         _redis = Redis.from_url(settings.redis_url, **kwargs)
     return _redis
 
