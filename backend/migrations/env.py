@@ -1,5 +1,6 @@
 import asyncio
 from logging.config import fileConfig
+from urllib.parse import urlparse
 
 from alembic import context
 from sqlalchemy import pool
@@ -12,6 +13,10 @@ import db.models.logs  # noqa: F401
 import db.models.training  # noqa: F401
 from core.config import settings
 from core.database import Base
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "postgres", "db"}
+_host = urlparse(settings.database_url).hostname or ""
+_connect_args = {"ssl": True} if _host not in _LOCAL_HOSTS else {}
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
@@ -52,6 +57,7 @@ async def run_async_migrations() -> None:
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
