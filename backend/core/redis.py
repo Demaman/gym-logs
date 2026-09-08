@@ -11,9 +11,10 @@ def get_redis() -> Redis:
     global _redis
     if _redis is None:
         parsed = urlparse(settings.redis_url)
-        use_ssl = parsed.scheme == "rediss"
+        host = parsed.hostname or ""
+        use_ssl = host not in {"localhost", "127.0.0.1", "redis", "db"}
         _redis = Redis(
-            host=parsed.hostname,
+            host=host,
             port=parsed.port or 6379,
             password=parsed.password,
             username=parsed.username or "default",
