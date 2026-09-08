@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -e
 
+mkdir -p "${MEDIA_ROOT:-/backend/media}"
+
 echo "Running database migrations..."
 uv run alembic upgrade head
 
