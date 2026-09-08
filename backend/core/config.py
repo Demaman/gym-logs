@@ -1,5 +1,9 @@
+import re
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+_ASYNCPG_INCOMPATIBLE = re.compile(r"[?&](sslmode|channel_binding)=[^&]*")
 
 
 class Settings(BaseSettings):
@@ -9,8 +13,13 @@ class Settings(BaseSettings):
     @field_validator("database_url", "test_database_url", mode="before")
     @classmethod
     def normalize_db_url(cls, v: str) -> str:
-        if v and v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if not v:
+            return v
+        if v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # asyncpg doesn't accept sslmode/channel_binding as URL params;
+        # SSL is handled via connect_args in database.py instead.
+        v = _ASYNCPG_INCOMPATIBLE.sub("", v).rstrip("?").rstrip("&")
         return v
     redis_url: str
 
