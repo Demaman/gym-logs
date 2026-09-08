@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from redis.asyncio import Redis
 
 from core.config import settings
@@ -8,10 +10,18 @@ _redis: Redis | None = None
 def get_redis() -> Redis:
     global _redis
     if _redis is None:
-        kwargs: dict = {"decode_responses": True, "protocol": 2}
-        if settings.redis_url.startswith("rediss://"):
-            kwargs["ssl_cert_reqs"] = "none"
-        _redis = Redis.from_url(settings.redis_url, **kwargs)
+        parsed = urlparse(settings.redis_url)
+        use_ssl = parsed.scheme == "rediss"
+        _redis = Redis(
+            host=parsed.hostname,
+            port=parsed.port or 6379,
+            password=parsed.password,
+            username=parsed.username or "default",
+            ssl=use_ssl,
+            ssl_cert_reqs="none" if use_ssl else None,
+            decode_responses=True,
+            protocol=2,
+        )
     return _redis
 
 
