@@ -90,6 +90,21 @@ class IdentityService:
         val = user.get("organization_id")
         return uuid.UUID(str(val)) if val else None
 
+    async def _current_org_id(self, user: CurrentUser) -> uuid.UUID | None:
+        """Return org_id from token; if null and caller is staff, re-read from DB.
+
+        Fixes stale-token issue: when a gym admin links a trainer the DB is
+        updated immediately but the trainer's existing JWT still carries org=null.
+        Re-fetching from DB makes all service methods work without forcing a
+        re-login.
+        """
+        org_id = self._org_id(user)
+        if org_id or user.get("role") not in Role.STAFF:
+            return org_id
+        uid = self._uid(user)
+        db_user = await self._user_repo.get_by_id(uid)
+        return db_user.organization_id if db_user else None
+
     # ── organizations ─────────────────────────────────────────────────────────
 
     async def create_organization(self, data: OrganizationCreate) -> OrganizationResponse:
@@ -111,7 +126,7 @@ class IdentityService:
         return OrgLookupResponse(id=org.id, name=org.name)
 
     async def get_my_organization(self, user: CurrentUser) -> OrganizationResponse:
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "You are not part of any organization")
         org = await self._org_repo.get_by_id(org_id)
@@ -122,7 +137,7 @@ class IdentityService:
     async def update_my_organization(self, user: CurrentUser, data: OrganizationUpdate) -> OrganizationResponse:
         if user.get("role") != Role.GYM_ADMIN:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can update organization details")
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "You are not part of any organization")
         org = await self._org_repo.get_by_id(org_id)
@@ -269,7 +284,7 @@ class IdentityService:
         role = user.get("role")
         if role not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers can list athletes")
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if role == Role.GYM_ADMIN:
             if not org_id:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
@@ -282,15 +297,15 @@ class IdentityService:
         return [UserResponse.model_validate(a) for a in athletes]
 
     async def get_member_health(self, user: CurrentUser) -> list[MemberHealthResponse]:
-        """Returns all athletes in the org annotated with activity status."""
+        """Returns all athletes annotated with activity status."""
         role = user.get("role")
         if role not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers and admins can view member health")
-        org_id = self._org_id(user)
-        if not org_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
+        org_id = await self._current_org_id(user)
 
         if role == Role.GYM_ADMIN:
+            if not org_id:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Gym admins must belong to an organization")
             athletes = await self._user_repo.list_athletes_by_org(org_id)
         else:
             trainer_id = self._uid(user)
@@ -344,7 +359,7 @@ class IdentityService:
         if user.get("role") not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers can list memberships")
         trainer_id = self._uid(user)
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         memberships = await self._membership_repo.list_by_trainer(trainer_id, org_id)
         athlete_ids = [m.athlete_id for m in memberships]
         athletes = {a.id: a for a in await self._user_repo.get_by_ids(athlete_ids)}
@@ -360,7 +375,7 @@ class IdentityService:
     async def list_org_memberships(self, user: CurrentUser) -> list[MembershipResponse]:
         if user.get("role") != Role.GYM_ADMIN:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can list all org memberships")
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "You are not part of any organization")
         memberships = await self._membership_repo.list_by_org(org_id)
@@ -432,12 +447,55 @@ class IdentityService:
     async def invite_member(self, user: CurrentUser, data: InviteCreate) -> InviteResponse:
         if user.get("role") not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers and gym admins can send invites")
-        org_id = self._org_id(user)
-        if not org_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization to send invites")
+        org_id = await self._current_org_id(user)
         trainer_id = self._uid(user)
         email = data.email.lower()
 
+        # ── Solo trainer path (no organization) ───────────────────────────────
+        # The invite model requires an org FK, so we skip it entirely and create
+        # a direct membership. Solo trainers can only link athletes who are
+        # already registered and also have no organization.
+        if not org_id:
+            existing_user = await self._user_repo.get_by_email(email)
+            if not existing_user:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND,
+                    "Athlete not found. As a solo trainer you can only link athletes "
+                    "who have already registered. Ask your client to create an account first.",
+                )
+            if existing_user.role != Role.ATHLETE:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "That user is not an athlete")
+            if existing_user.organization_id is not None:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "That athlete belongs to an organization and cannot be linked to a solo trainer",
+                )
+            existing_memberships = await self._membership_repo.list_by_trainer(trainer_id, None)
+            if any(m.athlete_id == existing_user.id for m in existing_memberships):
+                raise HTTPException(status.HTTP_409_CONFLICT, "This athlete is already your client")
+            membership = await self._membership_repo.create(
+                organization_id=None,
+                trainer_id=trainer_id,
+                athlete_id=existing_user.id,
+            )
+            await publish("membership.created", {
+                "membership_id": str(membership.id),
+                "organization_id": None,
+                "trainer_id": str(trainer_id),
+                "athlete_id": str(existing_user.id),
+            })
+            return InviteResponse(
+                id=uuid.uuid4(),
+                organization_id=None,
+                organization_name=None,
+                email=email,
+                role="athlete",
+                expires_at=datetime.now(UTC),
+                accepted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
+            )
+
+        # ── Org-based path ────────────────────────────────────────────────────
         existing_user = await self._user_repo.get_by_email(email)
         if existing_user:
             if existing_user.organization_id == org_id:
@@ -522,7 +580,7 @@ class IdentityService:
     async def list_pending_invites(self, user: CurrentUser) -> list[InviteResponse]:
         if user.get("role") not in Role.STAFF:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only trainers and gym admins can view invites")
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if not org_id:
             return []
         invites = await self._invite_repo.list_by_org(org_id)

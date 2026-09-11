@@ -12,7 +12,7 @@ class InviteCreate(BaseModel):
 
 class InviteResponse(BaseModel):
     id: uuid.UUID
-    organization_id: uuid.UUID
+    organization_id: uuid.UUID | None = None
     organization_name: str | None = None
     email: str
     role: str
