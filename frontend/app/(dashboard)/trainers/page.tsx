@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/form'
 import { useRole } from '@/hooks/use-role'
 import { useOrgTrainers, useOrgMemberships, useRemoveTrainer } from '@/hooks/identity/use-memberships'
+import { useAuthStore } from '@/lib/auth/store'
 import { useInvites, useInviteMember, useDeleteInvite } from '@/hooks/identity/use-invites'
 import type { AxiosError } from 'axios'
 import type { ApiError, Invite, User } from '@/types/api'
@@ -168,9 +169,11 @@ function InviteTrainerDialog({ onSuccess }: { onSuccess: () => void }) {
 function TrainerCard({
   trainer,
   athleteCount,
+  isSelf,
 }: {
   trainer: User
   athleteCount: number
+  isSelf: boolean
 }) {
   const remove = useRemoveTrainer()
 
@@ -190,6 +193,7 @@ function TrainerCard({
       <span className="hidden shrink-0 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary sm:inline-flex">
         {trainer.role === 'gym_admin' ? 'Gym Admin' : 'Trainer'}
       </span>
+      {!isSelf && (
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button
@@ -226,6 +230,7 @@ function TrainerCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      )}
     </div>
   )
 }
@@ -303,9 +308,25 @@ function TrainerSkeleton() {
 
 export default function TrainersPage() {
   const role = useRole()
+  const currentUser = useAuthStore((s) => s.user)
   const trainers = useOrgTrainers()
   const memberships = useOrgMemberships()
   const invites = useInvites()
+
+  // role is null while the auth store is hydrating — show skeletons instead of
+  // flashing "Access restricted" before the token is loaded into memory.
+  if (role === null) {
+    return (
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        <header className="flex h-16 shrink-0 items-center border-b border-border bg-background/80 px-6" />
+        <main className="flex-1 space-y-2 p-6">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <TrainerSkeleton key={i} />
+          ))}
+        </main>
+      </div>
+    )
+  }
 
   if (role !== 'gym_admin') {
     return (
@@ -370,6 +391,7 @@ export default function TrainersPage() {
                       key={t.id}
                       trainer={t}
                       athleteCount={athleteCountByTrainer[t.id] ?? 0}
+                      isSelf={t.id === currentUser?.id}
                     />
                   ))}
                 </div>

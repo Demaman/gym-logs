@@ -272,7 +272,7 @@ class IdentityService:
     async def list_trainers_for_org(self, user: CurrentUser) -> list[UserResponse]:
         if user.get("role") != Role.GYM_ADMIN:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can list trainers")
-        org_id = self._org_id(user)
+        org_id = await self._current_org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
         all_users = await self._user_repo.list_by_org(org_id)
@@ -405,7 +405,9 @@ class IdentityService:
     async def remove_trainer(self, user: CurrentUser, trainer_id: uuid.UUID) -> None:
         if user.get("role") != Role.GYM_ADMIN:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can remove trainers")
-        org_id = self._org_id(user)
+        if trainer_id == self._uid(user):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot remove yourself from the organization")
+        org_id = await self._current_org_id(user)
         if not org_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
         trainer = await self._user_repo.get_by_id(trainer_id)
