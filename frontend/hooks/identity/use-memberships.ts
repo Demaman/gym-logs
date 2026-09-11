@@ -8,6 +8,7 @@ import {
   getOrgMemberships,
   leaveOrganization,
   listOrgTrainers,
+  removeTrainer,
 } from '@/lib/api/identity'
 import { useAuthStore } from '@/lib/auth/store'
 
@@ -46,6 +47,17 @@ export function useDeleteMembership() {
   return useMutation({
     mutationFn: (id: string) => deleteMembership(id),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['identity', 'memberships'] })
+    },
+  })
+}
+
+export function useRemoveTrainer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: string) => removeTrainer(userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['identity', 'trainers'] })
       qc.invalidateQueries({ queryKey: ['identity', 'memberships'] })
     },
   })

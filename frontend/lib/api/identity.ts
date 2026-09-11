@@ -118,6 +118,10 @@ export async function updateMyOrganization(
   return data
 }
 
+export async function removeTrainer(userId: string): Promise<void> {
+  await api.delete(`/api/v1/identity/members/trainers/${userId}`)
+}
+
 export async function getMemberHealth(): Promise<MemberHealth[]> {
   const { data } = await api.get<MemberHealth[]>(
     '/api/v1/identity/organizations/current/member-health',

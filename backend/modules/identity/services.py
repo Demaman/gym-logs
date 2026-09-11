@@ -402,6 +402,22 @@ class IdentityService:
             return None
         return _enrich_membership(m, trainer_user, athlete_user)
 
+    async def remove_trainer(self, user: CurrentUser, trainer_id: uuid.UUID) -> None:
+        if user.get("role") != Role.GYM_ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only gym admins can remove trainers")
+        org_id = self._org_id(user)
+        if not org_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "You must belong to an organization")
+        trainer = await self._user_repo.get_by_id(trainer_id)
+        if not trainer or trainer.organization_id != org_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Trainer not found in your organization")
+        if trainer.role not in Role.STAFF:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "User is not a trainer")
+        memberships = await self._membership_repo.list_by_trainer(trainer_id, org_id)
+        for m in memberships:
+            await self._membership_repo.delete(m)
+        await self._user_repo.update(trainer, organization_id=None)
+
     async def delete_membership(self, user: CurrentUser, membership_id: uuid.UUID) -> None:
         membership = await self._membership_repo.get_by_id(membership_id)
         if not membership:

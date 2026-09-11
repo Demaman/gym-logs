@@ -110,6 +110,11 @@ async def list_trainers(
     return await svc.list_trainers_for_org(current_user)
 
 
+@router.delete("/members/trainers/{trainer_id}", status_code=204)
+async def remove_trainer(trainer_id: uuid.UUID, current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> None:
+    await svc.remove_trainer(current_user, trainer_id)
+
+
 @router.get("/members/athletes", response_model=list[UserResponse])
 async def list_athletes(current_user: CurrentUser, svc: IdentityService = Depends(_svc)) -> list[UserResponse]:
     return await svc.list_athletes_for_trainer(current_user)

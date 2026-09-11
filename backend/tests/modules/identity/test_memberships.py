@@ -300,3 +300,65 @@ async def test_gym_admin_list_athletes_returns_all_org_athletes(client: AsyncCli
     # Trainer and admin should not appear
     assert "trainer@aa.com" not in emails
     assert "admin@aa.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_gym_admin_removes_trainer_from_org(client: AsyncClient) -> None:
+    org_id = await _make_org(client, "RemoveTrainer Gym")
+    await _register(client, "rtadmin@rtg.com", role="gym_admin", org_id=org_id)
+    t_id = await _register(client, "rttrainer@rtg.com", role="trainer", org_id=org_id)
+    a_id = await _register(client, "rtathlete@rtg.com", role="athlete", org_id=org_id)
+    admin_token = await _login(client, "rtadmin@rtg.com")
+    t_token = await _login(client, "rttrainer@rtg.com")
+
+    # Link trainer to athlete
+    await client.post(
+        "/api/v1/identity/memberships",
+        json={"trainer_id": t_id, "athlete_id": a_id},
+        headers=_auth(t_token),
+    )
+
+    # Admin removes the trainer
+    resp = await client.delete(
+        f"/api/v1/identity/members/trainers/{t_id}", headers=_auth(admin_token)
+    )
+    assert resp.status_code == 204
+
+    # Trainer no longer appears in org trainer list
+    list_resp = await client.get("/api/v1/identity/members/trainers", headers=_auth(admin_token))
+    assert resp.status_code == 204
+    trainer_ids = [u["id"] for u in list_resp.json()]
+    assert t_id not in trainer_ids
+
+    # Athlete remains in org
+    athletes_resp = await client.get("/api/v1/identity/members/athletes", headers=_auth(admin_token))
+    assert athletes_resp.status_code == 200
+    athlete_ids = [u["id"] for u in athletes_resp.json()]
+    assert a_id in athlete_ids
+
+
+@pytest.mark.asyncio
+async def test_remove_trainer_forbidden_for_non_admin(client: AsyncClient) -> None:
+    org_id = await _make_org(client, "ForbidRemove Gym")
+    t_id = await _register(client, "forbidtrainer@frg.com", role="trainer", org_id=org_id)
+    await _register(client, "forbidathlete@frg.com", role="athlete", org_id=org_id)
+    t_token = await _login(client, "forbidtrainer@frg.com")
+
+    resp = await client.delete(
+        f"/api/v1/identity/members/trainers/{t_id}", headers=_auth(t_token)
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_remove_trainer_not_in_org_returns_404(client: AsyncClient) -> None:
+    org1 = await _make_org(client, "NotInOrg Gym1")
+    org2 = await _make_org(client, "NotInOrg Gym2")
+    await _register(client, "nioadmin@nio.com", role="gym_admin", org_id=org1)
+    t_id = await _register(client, "niotrainer@nio.com", role="trainer", org_id=org2)
+    admin_token = await _login(client, "nioadmin@nio.com")
+
+    resp = await client.delete(
+        f"/api/v1/identity/members/trainers/{t_id}", headers=_auth(admin_token)
+    )
+    assert resp.status_code == 404

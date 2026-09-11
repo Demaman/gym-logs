@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { UserCheck, UserPlus, Loader2, MailPlus, Clock } from 'lucide-react'
+import { UserCheck, UserPlus, Loader2, MailPlus, Clock, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -36,7 +36,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { useRole } from '@/hooks/use-role'
-import { useOrgTrainers, useOrgMemberships } from '@/hooks/identity/use-memberships'
+import { useOrgTrainers, useOrgMemberships, useRemoveTrainer } from '@/hooks/identity/use-memberships'
 import { useInvites, useInviteMember, useDeleteInvite } from '@/hooks/identity/use-invites'
 import type { AxiosError } from 'axios'
 import type { ApiError, Invite, User } from '@/types/api'
@@ -165,7 +165,15 @@ function InviteTrainerDialog({ onSuccess }: { onSuccess: () => void }) {
 
 // ── Trainer card ──────────────────────────────────────────────────────────────
 
-function TrainerCard({ trainer, athleteCount }: { trainer: User; athleteCount: number }) {
+function TrainerCard({
+  trainer,
+  athleteCount,
+}: {
+  trainer: User
+  athleteCount: number
+}) {
+  const remove = useRemoveTrainer()
+
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-5 py-4 transition-colors hover:bg-accent/30">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
@@ -182,6 +190,42 @@ function TrainerCard({ trainer, athleteCount }: { trainer: User; athleteCount: n
       <span className="hidden shrink-0 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary sm:inline-flex">
         {trainer.role === 'gym_admin' ? 'Gym Admin' : 'Trainer'}
       </span>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+            disabled={remove.isPending}
+            aria-label={`Remove ${trainer.email} from organization`}
+          >
+            {remove.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Trash2 className="size-4" aria-hidden />
+            )}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove trainer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{trainer.email}</strong> will be removed from your gym. All their
+              client links ({athleteCount} {athleteCount === 1 ? 'client' : 'clients'}) will be
+              unlinked. Clients stay in the gym and can be reassigned. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep trainer</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => remove.mutate(trainer.id)}
+            >
+              Remove trainer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
